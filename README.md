@@ -24,7 +24,7 @@ And environment variable defined on you Operating System:
 
 ### Azure authentication:  
 Azure Service Principal is the best option. Terraform provider script in this repo includes line for Client ID and Client Secret to use Service Principal.  
-If you don't have Azure Service Principal, you can use interactive authentication with Azure CLI by running ```az login``` command. This command needs to be run on the machine executing Terraform. This require to have Azure CLI installed.  
+If you don't have Azure Service Principal, you can use interactive authentication with Azure CLI by running ```az login``` command. This command needs to be run on the machine executing Terraform. This requires to have Azure CLI installed.  
 
 ### F5 XC authentication:  
 F5 XC auth offer API certificate or API token.  
@@ -32,7 +32,13 @@ XC Customer Edge deployment requires API certificate.
 This certificate needs to be **generated before** and copied in the same folder as TF files.  
 Certificate password must be configured through OS environnement variable ```VES_P12_PASSWORD```.  
 
-Linux VM does allow ssh connection with password. This require a password to be set. For a minimum of security, the password is in an environment variable called ```TF_VAR_azure_adminpassword```. This variable has to be **created before** launching Terraform deployment.  
+### F5 XC label:  
+Virtual Site, used in this deployement, requires Labels.  
+If the label you plan to use already exist in your current XC configuration, please set the value of ```f5xc_manage-labels``` to **false** in terraform.tfvars. Value is set to true in the provided file, assuming that the Label does not existe and will be created by Terraform.
+
+### Linux SSH password:
+Linux VM does allow ssh connection with password. This require a password to be set. For a minimum of security, the password must be set in an environment variable called ```TF_VAR_azure_adminpassword```. This variable has to be **created before** launching Terraform deployment.  
+Alternatively, you can set it directly in the terraform.tfvars, but not recommanded.
 
 # How to deploy  
 1/ Git clone the repo on a machine meeting the requirements.  

@@ -16,7 +16,7 @@ resource "local_file" "tf_jumphost_rdp" {
     username:s:${var.azure_admin-username}
     prompt for credentials:i:1
     administrative session:i:0
-    screen mode id:i:2
+    screen mode id:i:1
     desktopwidth:i:1920
     desktopheight:i:1080
     session bpp:i:32

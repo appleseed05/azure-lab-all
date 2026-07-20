@@ -44,7 +44,8 @@ Linux VM does allow ssh connection with password. This require a password to be 
 ```terraform apply```to launch the deployment if plan is successful  
 
 *: Variables in **terraform.tfvars** must be reviewed before lauching deployment.  
-Variables at the top of this files require to set a value. Others have a value already set but should be review to use suitable values.  
+Variables at the top of this files require to set a value. Others have a value already set, but it is highly recommanded to review and edit with suitable values for you.  
+Please review the Warning section at the bottom of this page for XC object naming values.
 
 Here are the variables that needs to be edited in terraform.tfvars:  
 * azure_sub-id
@@ -59,24 +60,31 @@ Here are the variables that needs to be edited in terraform.tfvars:
 Since all Terraform files are in the same folder, they will all be used to deploy the configuration when running terraform apply.  
 Terraform deployment provide some output, including public IP provided by Azure.  
 
+Execution of all the Terraform script can require up to 20 minutes to finish.  
+After Terraform successful execution, you will find an RDP file in the current folder to connect to Jumphost machine.  
+Please wait 15 or 20 minutes after Terraform execution finished for the Jumphost machine to be fully ready and reachable.  
+XC CE installation and registration require around one hour to complete. If CE still to register after one hour and a half, then something is probably wrong. First thing to check is that you did not use any capital letter or special character in the object name.  
+
 # How to use  
 After successful deployment, you should connect to Jumphost VM using SSH or RDP.  
 If connection does not work, please insure that you configure correctly the ```allowed-pips``` variable to define the public IP used by your machine.
 
 Jumphost machine has access to all the others VM deployed in this Azure VNET.  
 
-This Terraform project has been done and tested on Linux machine.  
-It is also ok on Windows by changing the path of the certificate in variables to match Windows syntaxe (\ instead of /).  
+This Terraform project has been done and tested on Ubuntu Linux machine.  
+It should also work on Windows with some adaptation, like the path of the certificate in variables to match Windows syntaxe (\ instead of /).  
 
-A lot of security shortcut are used in this project. It is for lab purpose only, not for production!
+A lot of security shortcut are used in this project. It is for lab purpose only, not for production!  
+Same for Terraform code, it is rather quick and dorty than state of the art.  
 
 # WARNING:
-For Azure VM, username must be the same for admin username and ssh username
+For Azure VM, username must be the same for admin username and ssh username.  
 
-XC CE needs site token. It is obfuscated in console with SMS v2, but still used under the hood. Type 1 of site token is used for SMS v2, but not documented.
+XC object name can ONLY use lower case alphanumeric caracters and dash. Must start by alphanumeric.  
+If you don't follow those guideline, deployment will fail in best case. Worth case, Terraform deployment will succeded but XC configuration will not fully apply. For instance, CE registration will not work, with error only visible locally on the CE.
 
-XC object name can ONLY use lower case alphanumeric caracters and dash. Must start by alphanumeric. 
+XC CE needs site token. It is obfuscated in console with SMS v2, but still used under the hood. Type 1 of site token is used for SMS v2, but not documented.  
 
-CE image version comes from Azure marketplace. It is hardcoded on TF and may change in the future. 
+CE image version comes from Azure marketplace. It is hardcoded on TF and may change in the future.  
 
 An F5 XC Virtual Site (defined in main-xcsmsv2.tf, alongside the site and its Known Label) groups the CE site by label. The two CE VMs share one site token, so they are two nodes of ONE Secure Mesh Site; the site carries the custom label ```vsite = f5xc_vsite-name``` and the Virtual Site selects it (site_type CUSTOMER_EDGE). The Virtual Site therefore has one member site. To add more members later, give other CE sites the same ```vsite``` label. The Virtual Site is created in the ```shared``` namespace by default (variable ```f5xc_vsite-namespace```) so it can be referenced by load balancers / policies in any namespace. 

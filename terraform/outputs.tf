@@ -21,7 +21,3 @@ output "XC_SMSv2_name" {
 output "XC_VirtualSite_name" {
   value = volterra_virtual_site.tf_f5xc_vsite.name
 }
-
-output "XC_VirtualSite_label" {
-  value = "${var.f5xc_vsite-label-key} = ${var.f5xc_vsite-name}"
-}

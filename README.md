@@ -20,7 +20,6 @@ The script in this repo needs to be run on a machine with following software ins
 
 And environment variable defined on you Operating System:
 * **VES_P12_PASSWORD** for XC API certificate  
-* **TF_VAR_azure_adminpassword** for VM SSH admin password  
 
 ### Azure authentication:  
 Azure Service Principal is the best option. Terraform provider script in this repo includes line for Client ID and Client Secret to use Service Principal.  
@@ -35,10 +34,6 @@ Certificate password must be configured through OS environnement variable ```VES
 ### F5 XC label:  
 Virtual Site, used in this deployement, requires Labels.  
 If the label you plan to use already exist in your current XC configuration, please set the value of ```f5xc_manage-labels``` to **false** in terraform.tfvars. Value is set to true in the provided file, assuming that the Label does not existe and will be created by Terraform.
-
-### Linux SSH password:
-Linux VM does allow ssh connection with password. This require a password to be set. For a minimum of security, the password must be set in an environment variable called ```TF_VAR_azure_adminpassword```. This variable has to be **created before** launching Terraform deployment.  
-Alternatively, you can set it directly in the terraform.tfvars, but not recommanded.
 
 # How to deploy  
 1/ Git clone the repo on a machine meeting the requirements.  
@@ -58,6 +53,7 @@ Here are the variables that needs to be edited in terraform.tfvars:
 * azure_tenant-id
 * azure_client-id
 * azure_client-secret
+* azure_adminpassword
 * allowed-pips
 * f5xc_api-p12-file
 * f5xc_namespace-name
@@ -81,10 +77,10 @@ This Terraform project has been done and tested on Ubuntu Linux machine.
 It should also work on Windows with some adaptation, like the path of the certificate in variables to match Windows syntaxe (\ instead of /).  
 
 A lot of security shortcut are used in this project. It is for lab purpose only, not for production!  
-Same for Terraform code, it is rather quick and dorty than state of the art.  
+Same for Terraform code, it works but not state of the art.  
 
 # WARNING:
-For Azure VM, username must be the same for admin username and ssh username.  
+For Azure VM, username must be the same username for admin username and ssh username.  
 
 XC object name can ONLY use lower case alphanumeric caracters and dash. Must start by alphanumeric.  
 If you don't follow those guideline, deployment will fail in best case. Worth case, Terraform deployment will succeded but XC configuration will not fully apply. For instance, CE registration will not work, with error only visible locally on the CE.

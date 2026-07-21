@@ -37,9 +37,10 @@ If the label you plan to use already exist in your current XC configuration, ple
 
 # How to deploy  
 1/ Git clone the repo on a machine meeting the requirements.  
-2/ Rename **terraform.tfvars.expl** into **terraform.tfvars**.  
-3/ Edit **terraform.tfvars** to define relevant value of all variables*. See bellow for variable that needs to be edited.  
-4/ Execute Terraform deployment with command:  
+2/ Go in the terraform folder of the project.  
+3/ Rename **terraform.tfvars.expl** into **terraform.tfvars**.  
+4/ Edit **terraform.tfvars** to define relevant value of all variables*. See bellow for variable that needs to be edited.  
+5/ Execute Terraform deployment with command:  
 ```terraform init``` to initialize the project and download Terraform component (based on provider)  
 ```terraform plan``` to check the deployment  
 ```terraform apply```to launch the deployment if plan is successful  

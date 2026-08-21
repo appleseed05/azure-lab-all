@@ -21,6 +21,11 @@ The project in this repo needs to be run on a machine with following software in
 And environment variable defined on you Operating System:
 * **VES_P12_PASSWORD** for XC API certificate  
 
+### Architecture:  
+This project aim to reproduce an on-premises architecture for lab practice. Due to Azure SDN behaviour, the BGP design between the router and the CE require an addition Azure Load Balancer.  
+For real on-premises deployment, this ILB is not required.  
+This design is not the best practice for pure public cloud deployment.  
+
 ### Azure authentication:  
 Azure Service Principal is the best option. Terraform provider script in this repo includes line for Client ID and Client Secret to use Service Principal.  
 If you don't have Azure Service Principal, you can use interactive authentication with Azure CLI by running ```az login``` command. This command needs to be run on the machine executing Terraform. This requires to have Azure CLI installed.  
@@ -29,7 +34,7 @@ If you don't have Azure Service Principal, you can use interactive authenticatio
 F5 XC auth offer API certificate or API token.  
 XC Customer Edge deployment requires API certificate.  
 This certificate needs to be **generated before** and copied in the same folder as TF files.  
-Certificate password must be configured through OS environnement variable ```VES_P12_PASSWORD```.  
+Certificate password must be configured through OS environment variable ```VES_P12_PASSWORD```.  
 
 ### F5 XC label:  
 Virtual Site, used in this deployment, requires Labels.  

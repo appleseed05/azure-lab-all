@@ -6,7 +6,7 @@
 # up to you to ignore this section and configure it in relevant section
 # ---------------------------------------------------------------
 
-prefix = "<prefixe-object>" # please use ONLY lower case, number and dash (-) as it is used in many object name, including F5 XC that accept only those caracters
+prefix = "<prefixe-object>" # please use ONLY lower case, number and dash (-) as it is used in many object name, including F5 XC that accept only those characters
 
 azure_sub_id        = "<subscription_ID>"
 azure_tenant_id     = "<tenant_ID>"

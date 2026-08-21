@@ -10,6 +10,13 @@ It includes the following :
 - F5 XC SMSv2 site with CE  
 - F5 XC Virtual Site grouping the CE site  
 
+# 📖 Documentation
+For detailed architecture diagrams, prerequisites checklist, and troubleshooting
+commands, see the [`docs/`](./docs/README.md) folder:
+- [Architecture](./docs/10-architecture.md)
+- [Prerequisites](./docs/20-prerequisites.md)
+- [Troubleshooting](./docs/30-troubleshooting.md)
+
 
 # Requirement:
 The project in this repo needs to be run on a machine with following software installed:  

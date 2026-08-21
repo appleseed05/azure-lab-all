@@ -1,148 +1,103 @@
-####################
-### Azure tenant ###
-####################
-variable "azure_sub-id" {
+###############################################################################
+# General
+###############################################################################
+variable "prefix" {
+  type = string
+  description = "Project prefix - used for every object name"
+}
+
+###############################################################################
+# Azure subscription / service principal
+###############################################################################
+variable "azure_sub_id" {
   type        = string
   description = "Azure provider subscription ID"
   sensitive   = true
 }
 
-variable "azure_tenant-id" {
+variable "azure_tenant_id" {
   type        = string
   description = "Azure provider tenant ID"
   sensitive   = true
 }
 
-variable "azure_client-id" {
+variable "azure_client_id" {
   type        = string
   description = "Azure provider client ID"
   sensitive   = true
 }
 
-variable "azure_client-secret" {
+variable "azure_client_secret" {
   type        = string
   description = "Azure provider client secret"
   sensitive   = true
 }
 
-#####################
-### Azure general ###
-#####################
+###############################################################################
+# Azure region and tags
+###############################################################################
 variable "azure_region" {
   type        = string
   description = "Azure resources type region"
   default     = "France Central"
 }
 
-variable "azure_tag-owner" {
+variable "azure_tag_owner" {
   type        = string
   description = "Azure tag owner name"
 }
 
-variable "azure_tag-env" {
+variable "azure_tag_env" {
   type        = string
   description = "Azure tag environment name"
 }
 
-###################################################
-### Azure Resource Group / VNET / Subnet / CIDR ###
-###################################################
-variable "azure_rg" {
+###############################################################################
+# Azure network CIDR
+###############################################################################
+# VNet
+variable "azure_cidr_vnet" {
   type        = string
-  description = "Azure resource type resource group"
+  description = "Azure resources type VNET CIDR - vnet"
 }
 
-variable "azure_vnet" {
+# Subnet External
+variable "azure_cidr_sub_ext" {
   type        = string
-  description = "Azure resources type virtual network"
+  description = "Azure resources type subnet CIDR - external"
 }
 
-variable "azure_sub-ext" {
+# Subnet Internal
+variable "azure_cidr_sub_int" {
   type        = string
-  description = "Azure resources type subnet - external subnet"
+  description = "Azure resources type subnet CIDR - internal"
 }
 
-variable "azure_sub-int" {
+# Subnet Admin
+variable "azure_cidr_sub_adm" {
   type        = string
-  description = "Azure resources type subnet - internal subnet"
+  description = "Azure resources type subnet CIDR - admin"
 }
 
-variable "azure_sub-adm" {
+# Subnet DMZ
+variable "azure_cidr_sub_dmz" {
   type        = string
-  description = "Azure resources type subnet - admin subnet"
+  description = "Azure resources type subnet CIDR - dmz"
 }
 
-variable "azure_sub-jmp" {
-  type        = string
-  description = "Azure resources type subnet - jumphost subnet"
-}
 
-variable "azure_cidr-vnet" {
-  type        = string
-  description = "Azure resources type VNET CIDR"
-}
+###############################################################################
+# Azure Resource Credentials
+###############################################################################
 
-variable "azure_cidr-sub-ext" {
-  type        = string
-  description = "Azure resources type subnet CIDR"
-}
-
-variable "azure_cidr-sub-int" {
-  type        = string
-  description = "Azure resources type subnet CIDR"
-}
-
-variable "azure_cidr-sub-adm" {
-  type        = string
-  description = "Azure resources type subnet CIDR"
-}
-
-variable "azure_cidr-sub-jmp" {
-  type        = string
-  description = "Azure resources type subnet CIDR"
-}
-
-#########################
-### Azure Route table ###
-#########################
-variable "azure_route" {
-  type        = string
-  description = "Azure resources type route"
-}
-
-variable "azure_rt-sub-ext" {
-  type        = string
-  description = "Azure resources type route for subnet external"
-}
-
-variable "azure_rt-sub-int" {
-  type        = string
-  description = "Azure resources type route for subnet internal"
-}
-
-variable "azure_rt-sub-adm" {
-  type        = string
-  description = "Azure resources type route for subnet internal"
-}
-
-##################################
-### Azure Resource Credentials ###
-##################################
-variable "azure_ssh-key" {
-  type        = string
-  description = "Azure resources type ssh key"
-}
-
-variable "azure_ssh-username" {
+variable "azure_ssh_username" {
   type        = string
   description = "Azure resources type username for VM ssh account"
-  default     = "f5ssh"
 }
 
-variable "azure_admin-username" {
+variable "azure_admin_username" {
   type        = string
   description = "Azure resources type username for VM admin account"
-  default     = "f5user"
 }
 
 variable "azure_adminpassword" {
@@ -151,270 +106,232 @@ variable "azure_adminpassword" {
   sensitive   = true
 }
 
-#######################################
-### Azure Gateway / IP / Interfaces ###
-#######################################
-variable "azure_natgw" {
-  type        = string
-  description = "Azure resources type NAT gateway"
-}
-
-variable "azure_pip-nat" {
-  type        = string
-  description = "Azure resources type Public IP for NAT"
-}
-
-variable "azure_pip-jmp" {
-  type        = string
-  description = "Azure resources type Public IP for Jumphost"
-}
-
-variable "azure_nic-ext" {
-  type        = string
-  description = "Azure resources type Interface for External"
-}
-
-variable "azure_nic-int" {
-  type        = string
-  description = "Azure resources type Interface for Internal"
-}
-
-variable "azure_nic-jmp" {
-  type        = string
-  description = "Azure resources type Interface for Jumphost"
-}
-
-variable "azure_nic-xc-ce01-slo" {
-  type        = string
-  description = "Azure resources type Interface for XC CE SLO"
-}
-
-variable "azure_nic-xc-ce01-sli" {
-  type        = string
-  description = "Azure resources type Interface for XC CE SLI"
-}
-
-variable "azure_nic-xc-ce02-slo" {
-  type        = string
-  description = "Azure resources type Interface for XC CE SLO"
-}
-
-variable "azure_nic-xc-ce02-sli" {
-  type        = string
-  description = "Azure resources type Interface for XC CE SLI"
-}
-
-variable "azure_nic-ext-ip" {
-  type        = string
-  description = "Azure resources type Private IP for External"
-}
-
-variable "azure_nic-int-ip" {
-  type        = string
-  description = "Azure resources type Private IP for Internal"
-}
-
-variable "azure_nic-jmp-ip" {
-  type        = string
-  description = "Azure resources type Private IP for Jumphost"
-}
-
-variable "azure_nic-xc-ce01-slo-ip" {
-  type        = string
-  description = "Azure resources type Private IP for XC CE SLO"
-}
-
-variable "azure_nic-xc-ce01-sli-ip" {
-  type        = string
-  description = "Azure resources type Private IP for XC CE SLI"
-}
-
-variable "azure_nic-xc-ce02-slo-ip" {
-  type        = string
-  description = "Azure resources type Private IP for XC CE SLO"
-}
-
-variable "azure_nic-xc-ce02-sli-ip" {
-  type        = string
-  description = "Azure resources type Private IP for XC CE SLI"
-}
-
-variable "nic-ext-ip-addr" {
-  type        = string
-  description = "Azure resources type Private IP static address for External"
-}
-
-variable "nic-int-ip-addr" {
-  type        = string
-  description = "Azure resources type Private IP static address for Internal"
-}
-
-variable "nic-jmp-ip-addr" {
-  type        = string
-  description = "Azure resources type Private IP static address for Jumphost"
-}
-
-variable "nic-xc-ce01-slo-ip-addr" {
-  type        = string
-  description = "Azure resources type Private IP static address for XC CE SLO"
-}
-
-variable "nic-xc-ce01-sli-ip-addr" {
-  type        = string
-  description = "Azure resources type Private IP static address for XC CE SLI"
-}
-
-variable "nic-xc-ce02-slo-ip-addr" {
-  type        = string
-  description = "Azure resources type Private IP static address for XC CE SLO"
-}
-
-variable "nic-xc-ce02-sli-ip-addr" {
-  type        = string
-  description = "Azure resources type Private IP static address for XC CE SLI"
-}
-
-###########################
-### Azure NSG and Rules ###
-###########################
-variable "azure_nsg-jmp" {
-  type        = string
-  description = "Azure resources type Network Security Group"
-}
-
-variable "azure_nsg-allow-rdp" {
-  type        = string
-  description = "Azure resources type NSG rule allow RDP"
-}
-
-variable "azure_nsg-allow-ssh" {
-  type        = string
-  description = "Azure resources type NSG rule allow SSH"
-}
-
-#########################
-### Azure VM settings ###
-#########################
-variable "azure_vm-size-linux" {
-  type        = string
-  description = "Azure resources type VM size"
-  default     = "Standard_B2s"
-}
-
-variable "azure_vm-size-srv" {
-  type        = string
-  description = "Azure resources type VM size"
-  default     = "Standard_B2s"
-}
-
-variable "azure_vm-size-jmp" {
-  type        = string
-  description = "Azure resources type VM size"
-  default     = "Standard_B2s"
-}
-
-variable "azure_vm-size-xc-ce" {
-  type        = string
-  description = "Azure resources type VM size"
-  default     = "Standard_D8_v4"
-}
-
-variable "azure_vm-ext" {
-  type        = string
-  description = "Azure resources type VM for External VM"
-}
-
-variable "azure_vm-int" {
-  type        = string
-  description = "Azure resources type VM for Internal VM"
-}
-
-variable "azure_vm-jmp" {
-  type        = string
-  description = "Azure resources type VM for Jumphost VM"
-}
-
-variable "azure_vm-xc-ce01" {
-  type        = string
-  description = "Azure resources type VM for F5 XC Customer Edge VM"
-}
-
-variable "azure_vm-xc-ce02" {
-  type        = string
-  description = "Azure resources type VM for F5 XC Customer Edge VM"
-}
-
-##########################
-### SSH key generation ###
-##########################
-variable "tls_ssh-key-path-private" {
-  type        = string
-  description = "SSH private key path for Windows"
-  default     = "./my-key-ed25519"
-  sensitive   = true
-}
-
-variable "tls_ssh-key-path-public" {
-  type        = string
-  description = "SSH private key path for Windows"
-  default     = "./my-key-ed25519.pub"
-  sensitive   = true
-}
-
-################################
-### Public IP list (for NSG) ###
-################################
-
-variable "allowed-pips" {
+variable "allowed_pips" {
   type        = list(string)
   description = "Allowed Public IP in Azure NSG rules"
 }
 
-#############################
-### F5 XC API Certificate ###
-#############################
-variable "f5xc_api-p12-file" {
+
+###############################################################################
+# Azure Load Balancer
+###############################################################################
+variable "azure_lbce_ip" {
+  type = string
+  description = "Azure Load Balancer IP address"
+}
+
+
+###############################################################################
+# Azure VM & Network
+###############################################################################
+
+# F5 XC CE VM name
+variable "azure_vm_ce01" {
+  type = string
+  description = "Azure VM name for XC CE01"
+}
+
+variable "azure_vm_ce02" {
+  type = string
+  description = "Azure VM name for XC CE01"
+}
+
+# External VM network address
+variable "azure_nic_ext_ip_addr" {
+  type        = string
+  description = "Azure resources type Private IP static address for External nic VM"
+}
+
+# Internal VM network address
+variable "azure_nic_int_ip_addr" {
+  type        = string
+  description = "Azure resources type Private IP static address for Internal nic VM"
+}
+
+# Jumphost VM network address
+variable "azure_nic_jmp_ip_addr" {
+  type        = string
+  description = "Azure resources type Private IP static address for Jumphost nic VM"
+}
+
+# Router VM network address
+variable "azure_nic_rtr_dmz_ip_addr" {
+  type        = string
+  description = "Azure resources type Private IP static address for router dmz nic VM"
+}
+
+variable "azure_nic_rtr_ext_ip_addr" {
+  type        = string
+  description = "Azure resources type Private IP static address for router external nic VM"
+}
+
+# XC CE01 VM network address
+variable "azure_nic_xc_ce01_slo_ip_addr" {
+  type        = string
+  description = "Azure resources type Private IP static address for XC CE01 SLO nic VM"
+}
+
+variable "azure_nic_xc_ce01_sli_ip_addr" {
+  type        = string
+  description = "Azure resources type Private IP static address for XC CE01 SLI nic VM"
+}
+
+# XC CE02 VM network address
+variable "azure_nic_xc_ce02_slo_ip_addr" {
+  type        = string
+  description = "Azure resources type Private IP static address for XC CE02 SLO nic VM"
+}
+
+variable "azure_nic_xc_ce02_sli_ip_addr" {
+  type        = string
+  description = "Azure resources type Private IP static address for XC CE02 SLI nic VM"
+}
+
+
+###############################################################################
+# Azure VM size
+###############################################################################
+variable "azure_vm_size_linux" {
+  type        = string
+  description = "Azure resources type VM size for regular Linux"
+}
+
+variable "azure_vm_size_srv" {
+  type        = string
+  description = "Azure resources type VM size for server"
+}
+
+variable "azure_vm_size_jmp" {
+  type        = string
+  description = "Azure resources type VM size for Jumphost"
+}
+
+variable "azure_vm_size_rtr" {
+  type        = string
+  description = "Azure resources type VM size for router"
+}
+
+variable "azure_vm_size_xc_ce" {
+  type        = string
+  description = "Azure resources type VM size for F5XC CE"
+}
+
+
+###############################################################################
+# Azure marketplace images
+###############################################################################
+# VyOS
+variable "image_publisher_vyos" {
+  type        = string
+  description = "Azure Marketplace image publisher for VyOS"
+}
+
+variable "image_offer_vyos" {
+  type        = string
+  description = "Azure Marketplace image offer for VyOS"
+}
+
+variable "image_sku_vyos" {
+  type        = string
+  description = "Azure Marketplace image SKU for VyOS"
+}
+
+variable "image_version_vyos" {
+  type        = string
+  description = "Azure Marketplace imageOS version for VyOS"
+}
+
+# XC CE
+variable "image_publisher_xcce" {
+  type = string
+  description = "Azure Marketplace image publisher for XC CE"
+}
+
+variable "image_offer_xcce" {
+  type = string
+  description = "Azure Marketplace image offer for XC CE"
+}
+
+variable "image_sku_xcce" {
+  type        = string
+  description = "Azure Marketplace image SKU for XC CE"
+}
+
+variable "image_version_xcce" {
+  type        = string
+  description = "Azure Marketplace imageOS version for XC CE"
+}
+
+# Ubuntu
+variable "image_publisher_ubuntu" {
+  type = string
+  description = "Azure Marketplace image publisher for Ubuntu"
+}
+
+variable "image_offer_ubuntu" {
+  type = string
+  description = "Azure Marketplace image offer for Ubuntu"
+}
+
+variable "image_sku_ubuntu" {
+  type        = string
+  description = "Azure Marketplace image SKU for Ubuntu"
+}
+
+variable "image_version_ubuntu" {
+  type        = string
+  description = "Azure Marketplace imageOS version for Ubuntu"
+}
+
+###############################################################################
+# Router BGP & NAT
+###############################################################################
+variable "router_bgp_asn" {
+  description = "Router local AS number"
+  type        = number
+}
+
+
+variable "router_bgp_maximum_paths_ebgp" {
+  description = "Number of Equal Cost Multi Path (ECMP) for a given /32 vip prefix on the router announced by CE. Use a value above the number of current CE to avoid changing it when adding CE."
+  type        = number
+}
+
+
+###############################################################################
+# F5 XC settings
+###############################################################################
+variable "f5xc_api_p12_file" {
   type        = string
   description = "F5XC tenant api key"
 }
 
-variable "f5xc_api-url" {
+variable "f5xc_api_url" {
   type        = string
   description = "F5XC tenant url"
 }
 
-variable "f5xc_smsv2-site-name" {
-  type        = string
-  description = "F5XC SMSv2 site name"
-}
-
-variable "f5xc_smsv2-site-token" {
-  type        = string
-  description = "F5XC SMSv2 site token"
-}
-
-variable "f5xc_namespace-name" {
+variable "f5xc_namespace_name" {
   type        = string
   description = "F5XC Namespace name"
 }
 
-variable "f5xc_vsite-name" {
-  type        = string
-  description = "F5XC Virtual Site name"
+variable "f5xc_bgp_asn" {
+  type        = number
+  description = "ASN number for BGP configuration"
 }
 
-variable "f5xc_vsite-namespace" {
+variable "f5xc_vip_cidr" {
   type        = string
-  description = "F5XC namespace hosting the Virtual Site object (typically 'shared')"
+  description = "IP range for XC CE VIP"
 }
 
-variable "f5xc_vsite-label-key" {
+variable "f5xc_lb_nginx_fqdn" {
   type        = string
-  description = "Custom label key used to group CE sites into the Virtual Site"
+  description = "XC http Load Balancer fqdn for NGINX server on Internal VM"
 }
 
-variable "f5xc_manage-labels" {
-  type        = bool
-  description = "Whether Terraform creates the XC Known Label key/value used by the Virtual Site selector. Set to false if they already exist in the tenant (there is no data source to auto-detect them)."
-  default     = true
+variable "f5xc_lb_nginx_vip" {
+  type        = string
+  description = "XC http Load Balancer VIP for NGINX server on Internal VM"
 }

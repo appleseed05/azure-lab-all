@@ -1,3 +1,7 @@
+###############################################################################
+# Terraform and provider configuration
+###############################################################################
+
 terraform {
   required_providers {
     azurerm = {
@@ -13,11 +17,11 @@ terraform {
       version = ">= 2.5.0"
     }
     volterra = {
-      source = "volterraedge/volterra"
-      version = "0.11.46"
+      source  = "volterraedge/volterra"
+      version = "~>0.11.46"
     }
     cloudinit = {
-      source = "hashicorp/cloudinit"
+      source  = "hashicorp/cloudinit"
       version = ">= 2.3.7"
     }
   }
@@ -25,13 +29,15 @@ terraform {
 
 provider "azurerm" {
   features {}
-  subscription_id = var.azure_sub-id
-  tenant_id       = var.azure_tenant-id
-  client_id       = var.azure_client-id
-  client_secret   = var.azure_client-secret
+  subscription_id = var.azure_sub_id
+  tenant_id       = var.azure_tenant_id
+  client_id       = var.azure_client_id
+  client_secret   = var.azure_client_secret
 }
 
 provider "volterra" {
-  api_p12_file     = var.f5xc_api-p12-file
-  url              = var.f5xc_api-url
+  # Resolved against the module directory, not the shell working directory,
+  # so the p12 must sit in the project folder alongside the .tf files.
+  api_p12_file = "${path.module}/${var.f5xc_api_p12_file}"
+  url          = var.f5xc_api_url
 }

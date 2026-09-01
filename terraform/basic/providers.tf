@@ -18,7 +18,7 @@ terraform {
     }
     volterra = {
       source  = "volterraedge/volterra"
-      version = "~>0.11.46"
+      version = "~>0.12.2"
     }
     cloudinit = {
       source  = "hashicorp/cloudinit"

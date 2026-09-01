@@ -96,11 +96,11 @@ azure_nic_xc_ce02_sli_ip_addr = "10.1.20.216"
 # ---------------------------------------------------------------
 # Azure VM size
 # ---------------------------------------------------------------
-azure_vm_size_srv   = "Standard_B2s"
-azure_vm_size_jmp   = "Standard_D2s_v3"
-azure_vm_size_linux = "Standard_B2s"
-azure_vm_size_rtr   = "Standard_D8s_v3"
-azure_vm_size_xc_ce = "Standard_D8_v4"
+azure_vm_size_srv   = "Standard_B2s"    # 2cpu - 4GB ram
+azure_vm_size_jmp   = "Standard_D2s_v3" # 2cpu - 8GB ram (2 thread per core)
+azure_vm_size_linux = "Standard_B2s"    # 2cpu - 4GB ram
+azure_vm_size_rtr   = "Standard_D8s_v3" # 2cpu - 8GB ram (2 thread per core)
+azure_vm_size_xc_ce = "Standard_D8_v4"  # 8cpu - 32GB ram
 
 # ---------------------------------------------------------------
 # Azure marketplace images

@@ -355,6 +355,6 @@ variable "f5xc_lb_nginx_fqdn" {
 }
 
 variable "f5xc_lb_nginx_vip" {
-  type        = string
+  type        = list(string)
   description = "XC http Load Balancer VIP for NGINX server on Internal VM"
 }

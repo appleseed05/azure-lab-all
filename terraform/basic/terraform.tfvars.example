@@ -148,5 +148,5 @@ router_bgp_maximum_paths_ebgp = 4
 f5xc_bgp_asn           = "65100"
 f5xc_vip_cidr          = "192.168.200.0/24"
 
-f5xc_lb_nginx_fqdn        = "mylab.mydomain.com"
+f5xc_lb_nginx_fqdn        = ["mylab.mydomain.com", "mylab.internal.local"]
 f5xc_lb_nginx_vip         = "192.168.200.5"

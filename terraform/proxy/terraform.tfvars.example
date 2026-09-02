@@ -134,11 +134,10 @@ image_version_ubuntu  = "latest"
 # to work with /32 VIP announced by several CE.
 
 router_bgp_asn = 65001
-
 router_bgp_maximum_paths_ebgp = 4
 
 # ---------------------------------------------------------------
-# Tinyproxy (External VM)
+# Internal DNS (External VM)
 # ---------------------------------------------------------------
 dns_internal_zone = "f5demo.lan"
 

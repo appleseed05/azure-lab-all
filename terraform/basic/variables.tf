@@ -327,7 +327,7 @@ variable "f5xc_vip_cidr" {
 }
 
 variable "f5xc_lb_nginx_fqdn" {
-  type        = string
+  type        = list(string)
   description = "XC http Load Balancer fqdn for NGINX server on Internal VM"
 }
 

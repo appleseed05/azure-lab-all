@@ -95,6 +95,7 @@ resource "volterra_securemesh_site_v2" "tf_f5xc_site_01" {
   custom_proxy {
     proxy_ip_address = azurerm_linux_virtual_machine.tf_azure_vm_ext.private_ip_address
     proxy_port = var.tinyproxy_port
+    enable_re_tunnel = true
   }
 
   dns_ntp_config {
@@ -180,6 +181,7 @@ resource "volterra_securemesh_site_v2" "tf_f5xc_site_02" {
   custom_proxy {
     proxy_ip_address = azurerm_linux_virtual_machine.tf_azure_vm_ext.private_ip_address
     proxy_port = var.tinyproxy_port
+    enable_re_tunnel = true
   }
 
   dns_ntp_config {

@@ -73,6 +73,7 @@ locals {
     "${var.prefix}-${var.azure_vm_ce01}" = var.azure_nic_xc_ce01_slo_ip_addr
     "${var.prefix}-${var.azure_vm_ce02}" = var.azure_nic_xc_ce02_slo_ip_addr
     "${var.prefix}-lbce"                 = var.azure_lbce_ip
+    "mylb"                               = var.f5xc_lb_nginx_vip
   }
 
   cloud_init_ext = templatefile("${path.module}/cloud-init-ext.yaml.tpl", {

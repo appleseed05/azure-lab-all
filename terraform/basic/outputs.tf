@@ -25,3 +25,8 @@ output "XC_site_name_02" {
 output "XC_VirtualSite_name" {
   value = volterra_virtual_site.tf_f5xc_vsite.name
 }
+
+output "last_applied_at" {
+  description = "Timestamp of the last terraform apply (UTC)"
+  value       = timestamp()
+}

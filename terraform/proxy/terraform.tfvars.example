@@ -16,6 +16,7 @@ azure_client_secret = "<client_secret>"
 azure_adminpassword  = "<your-admin-password>"
 allowed_pips = ["1.2.3.4", "5.6.7.8"]
 f5xc_api_p12_file = "<p12-file-name>" # the file must be located in the same folder as the Terraform files
+f5xc_tenant_name = "<tenant-name>"
 f5xc_namespace_name = "<namespace-name>"
 f5xc_api_url = "https://<tenant-name>.console.ves.volterra.io/api"
 

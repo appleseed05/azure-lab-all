@@ -136,22 +136,28 @@ variable "azure_vm_ce02" {
   description = "Azure VM name for XC CE01"
 }
 
-# External VM network address
-variable "azure_nic_ext_ip_addr" {
+# Services VM network address
+variable "azure_nic_svc_ip_addr" {
   type        = string
-  description = "Azure resources type Private IP static address for External nic VM"
+  description = "Azure resources type Private IP static address for Services nic VM"
 }
 
-# Internal VM network address
-variable "azure_nic_int_ip_addr" {
+# Application VM network address
+variable "azure_nic_app_ip_addr" {
   type        = string
-  description = "Azure resources type Private IP static address for Internal nic VM"
+  description = "Azure resources type Private IP static address for Application nic VM"
 }
 
 # Jumphost VM network address
 variable "azure_nic_jmp_ip_addr" {
   type        = string
   description = "Azure resources type Private IP static address for Jumphost nic VM"
+}
+
+# Observability VM network address
+variable "azure_nic_obs_ip_addr" {
+  type        = string
+  description = "Azure resources type Private IP static address for Observability nic VM"
 }
 
 # Router VM network address
@@ -291,7 +297,6 @@ variable "router_bgp_asn" {
   type        = number
 }
 
-
 variable "router_bgp_maximum_paths_ebgp" {
   description = "Number of Equal Cost Multi Path (ECMP) for a given /32 vip prefix on the router announced by CE. Use a value above the number of current CE to avoid changing it when adding CE."
   type        = number
@@ -299,20 +304,31 @@ variable "router_bgp_maximum_paths_ebgp" {
 
 
 ###############################################################################
-# Internal DNS (External VM)
+# Internal DNS (Services VM)
 ###############################################################################
 variable "dns_internal_zone" {
   type        = string
-  description = "Authoritative internal DNS zone served by BIND on the External VM"
+  description = "Authoritative internal DNS zone served by BIND on the Services VM"
+  default     = "f5demo.lan"
 }
 
 
 ###############################################################################
-# Tinyproxy (External VM)
+# Tinyproxy (Services VM)
 ###############################################################################
 variable "tinyproxy_port" {
   type        = number
-  description = "Listening port for the Tinyproxy HTTP proxy running on the External VM"
+  description = "Listening port for the Tinyproxy HTTP proxy running on the Services VM"
+}
+
+
+###############################################################################
+# Observability (Loki / Grafana / Alloy)
+###############################################################################
+variable "loki_retention_period" {
+  type        = string
+  description = "How long Loki keeps logs, as a Go duration (168h = 7 days)"
+  default     = "168h"
 }
 
 
@@ -351,10 +367,11 @@ variable "f5xc_vip_cidr" {
 
 variable "f5xc_lb_nginx_fqdn" {
   type        = list(string)
-  description = "XC http Load Balancer fqdn for NGINX server on Internal VM"
+  description = "XC http Load Balancer FQDNs for the NGINX server on the Application VM (external + internal names)"
 }
 
 variable "f5xc_lb_nginx_vip" {
   type        = string
-  description = "XC http Load Balancer VIP for NGINX server on Internal VM"
+  description = "XC http Load Balancer VIP for NGINX server on Application VM"
 }
+

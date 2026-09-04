@@ -68,7 +68,7 @@ resource "volterra_bgp" "tf_f5xc_bgp01" {
 
       # oneof: inside_interfaces | interface | interface_list | outside_interfaces
       # outside_interfaces = true
-/*
+      /*
       family_inet {
         # oneof: disable | enable
         enable = true
@@ -156,7 +156,7 @@ resource "volterra_bgp" "tf_f5xc_bgp02" {
 
       # oneof: inside_interfaces | interface | interface_list | outside_interfaces
       # outside_interfaces = true
-/*
+      /*
       family_inet {
         # oneof: disable | enable
         enable = true

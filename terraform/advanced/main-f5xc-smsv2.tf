@@ -9,7 +9,7 @@ resource "volterra_known_label_key" "tf_f5xc_vsite_label_key" {
 }
 
 resource "volterra_known_label" "tf_f5xc_vsite_label_value" {
-  key         = "${volterra_known_label_key.tf_f5xc_vsite_label_key.key}"
+  key         = volterra_known_label_key.tf_f5xc_vsite_label_key.key
   value       = "${var.prefix}-vsite-label-value"
   namespace   = "shared"
   description = "Label value selecting CE sites for Virtual Site"
@@ -21,6 +21,18 @@ resource "volterra_known_label" "tf_f5xc_vsite_label_value" {
 ###############################################################################
 # F5 XC SMSv2 site creation
 ###############################################################################
+
+# The proxy / DNS / NTP addresses below come from var.azure_nic_svc_ip_addr, NOT
+# from azurerm_linux_virtual_machine.tf_azure_vm_svc.private_ip_address.
+#
+# The resource attribute used to be referenced here to create an implicit
+# dependency on the services VM, but it made the address "known after apply"
+# whenever that VM was replaced, so both sites showed a spurious in-place update
+# every time. The static variable is the same value and keeps the plan clean.
+#
+# Dropping the implicit dependency is safe: the CE takes ~1h to register and
+# retries until the address answers, so the services VM has ample time to come
+# up. Add depends_on here if strict ordering is ever needed again.
 
 # site01
 resource "volterra_securemesh_site_v2" "tf_f5xc_site_01" {
@@ -93,17 +105,17 @@ resource "volterra_securemesh_site_v2" "tf_f5xc_site_01" {
   # in json view of console => "tunnel_type": "SITE_TO_SITE_TUNNEL_SSL"
 
   custom_proxy {
-    proxy_ip_address = azurerm_linux_virtual_machine.tf_azure_vm_ext.private_ip_address
-    proxy_port = var.tinyproxy_port
+    proxy_ip_address = var.azure_nic_svc_ip_addr
+    proxy_port       = var.tinyproxy_port
     enable_re_tunnel = true
   }
 
   dns_ntp_config {
     custom_dns {
-      dns_servers = [ azurerm_linux_virtual_machine.tf_azure_vm_ext.private_ip_address ]
+      dns_servers = [var.azure_nic_svc_ip_addr]
     }
     custom_ntp {
-      ntp_servers = [ azurerm_linux_virtual_machine.tf_azure_vm_ext.private_ip_address ]
+      ntp_servers = [var.azure_nic_svc_ip_addr]
     }
   }
 }
@@ -179,17 +191,17 @@ resource "volterra_securemesh_site_v2" "tf_f5xc_site_02" {
   # in json view of console => "tunnel_type": "SITE_TO_SITE_TUNNEL_SSL"
 
   custom_proxy {
-    proxy_ip_address = azurerm_linux_virtual_machine.tf_azure_vm_ext.private_ip_address
-    proxy_port = var.tinyproxy_port
+    proxy_ip_address = var.azure_nic_svc_ip_addr
+    proxy_port       = var.tinyproxy_port
     enable_re_tunnel = true
   }
 
   dns_ntp_config {
     custom_dns {
-      dns_servers = [ azurerm_linux_virtual_machine.tf_azure_vm_ext.private_ip_address ]
+      dns_servers = [var.azure_nic_svc_ip_addr]
     }
     custom_ntp {
-      ntp_servers = [ azurerm_linux_virtual_machine.tf_azure_vm_ext.private_ip_address ]
+      ntp_servers = [var.azure_nic_svc_ip_addr]
     }
   }
 }

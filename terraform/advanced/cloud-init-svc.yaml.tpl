@@ -1,10 +1,10 @@
 #cloud-config
-# The external VM sits in the ext subnet, whose route table sends 0.0.0.0/0 to
-# the VyOS router. Like the internal VM and the jumphost it has no public IP and
+# The services VM sits in the ext subnet, whose route table sends 0.0.0.0/0 to
+# the VyOS router. Like the application VM and the jumphost it has no public IP and
 # no direct egress, so apt only works once the router has booted AND committed
 # its source-NAT masquerade rule. The built-in `packages:` module runs early in
 # the boot and never retries, so everything is done from runcmd behind the same
-# egress wait loop used by cloud-init-int.yaml.tpl and cloud-init-jmp.yaml.tpl.
+# egress wait loop used by cloud-init-app.yaml.tpl and cloud-init-jmp.yaml.tpl.
 package_update: false
 
 write_files:
@@ -12,7 +12,7 @@ write_files:
     owner: root:root
     permissions: '0644'
     content: |
-      # Managed by cloud-init (cloud-init-ext.yaml.tpl) - local edits are lost
+      # Managed by cloud-init (cloud-init-svc.yaml.tpl) - local edits are lost
       # on redeploy. Based on the tinyproxy 1.11.1 packaged defaults.
       User tinyproxy
       Group tinyproxy
@@ -20,7 +20,10 @@ write_files:
       Timeout 600
       DefaultErrorFile "/usr/share/tinyproxy/default.html"
       StatFile "/usr/share/tinyproxy/stats.html"
-      LogFile "/var/log/tinyproxy/tinyproxy.log"
+      # Syslog instead of LogFile so the lines reach the central log server.
+      # These two directives are mutually exclusive in tinyproxy - setting both
+      # is a config error, so LogFile is deliberately absent.
+      Syslog On
       LogLevel Info
       PidFile "/run/tinyproxy/tinyproxy.pid"
       MaxClients 100
@@ -28,7 +31,7 @@ write_files:
 
       # No `Listen` directive on purpose: tinyproxy then binds every interface,
       # so the proxy is reachable from the other lab subnets and not only from
-      # the external VM itself.
+      # the services VM itself.
 
       # Who is allowed to use the proxy. Lab-wide: the whole VNet.
       Allow 127.0.0.1
@@ -53,7 +56,7 @@ write_files:
     owner: root:root
     permissions: '0644'
     content: |
-      # Managed by cloud-init (cloud-init-ext.yaml.tpl).
+      # Managed by cloud-init (cloud-init-svc.yaml.tpl).
       # Serve time to the whole lab VNet.
       allow ${allowed_cidr}
       # Keep answering even if the PTP refclock ever goes away, so lab clients
@@ -65,13 +68,13 @@ write_files:
   # Writing straight to /etc/bind here would put files in place before dpkg
   # unpacks the package, and named.conf.options / named.conf.local are dpkg
   # CONFFILES: pre-existing content turns the install into a conffile conflict.
-  # Same staging pattern the internal VM uses for its nginx site.
+  # Same staging pattern the application VM uses for its nginx site.
   # ---------------------------------------------------------------------------
   - path: /root/named.conf.options
     owner: root:root
     permissions: '0644'
     content: |
-      // Managed by cloud-init (cloud-init-ext.yaml.tpl).
+      // Managed by cloud-init (cloud-init-svc.yaml.tpl).
       acl "lab" {
           ${allowed_cidr};
           localhost;
@@ -100,7 +103,7 @@ write_files:
     owner: root:root
     permissions: '0644'
     content: |
-      // Managed by cloud-init (cloud-init-ext.yaml.tpl).
+      // Managed by cloud-init (cloud-init-svc.yaml.tpl).
       zone "${dns_zone}" {
           type master;
           file "/etc/bind/db.${dns_zone}";
@@ -109,7 +112,7 @@ write_files:
 
       // Azure-internal names (<vm>.<guid>.internal.cloudapp.net) live ONLY in
       // Azure's own resolver: a root-hints recursion returns NXDOMAIN for them.
-      // The jumphost and internal VM use this server as their only resolver
+      // The jumphost and application VM use this server as their only resolver
       // (netplan use-dns:false), so without this they lose Azure name
       // resolution completely. 168.63.129.16 is Azure's fixed platform
       // resolver - same address in every region, so it is not a lab variable.
@@ -120,6 +123,19 @@ write_files:
       //
       // Scoped to internal.cloudapp.net on purpose - the PUBLIC cloudapp.net
       // zone keeps resolving normally through recursion.
+      // Send named's own messages to syslog (daemon facility) so rsyslog can
+      // forward them to the observability VM along with everything else.
+      logging {
+          channel lab_syslog {
+              syslog daemon;
+              severity info;
+              print-category yes;
+              print-severity yes;
+          };
+          category default { lab_syslog; };
+          category queries { lab_syslog; };
+      };
+
       zone "internal.cloudapp.net" {
           type forward;
           forward only;
@@ -127,7 +143,7 @@ write_files:
       };
 
   # Zone data is generated from local.dns_zone_records in
-  # main-azvm-external.tf, which is built from the same variables that assign
+  # main-azvm-services.tf, which is built from the same variables that assign
   # the NIC addresses - so the zone cannot drift from the actual VM IPs.
   - path: /root/db.${dns_zone}
     owner: root:root
@@ -147,6 +163,14 @@ write_files:
 %{ for host, ip in dns_records ~}
       ${format("%-26s IN  A   %s", host, ip)}
 %{ endfor ~}
+
+  # Forward everything this host logs (tinyproxy, named, chronyd, sshd...) to
+  # Alloy on the observability VM. The single @ means UDP; @@ would be TCP.
+  - path: /etc/rsyslog.d/60-lab-forward.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      *.* @${syslog_host}:514
 
 runcmd:
   # Wait until egress via VyOS actually works (up to 60 x 20s = 20 min).
@@ -193,7 +217,7 @@ runcmd:
   # walks. Every one of those fails with "network unreachable" and burns the
   # query budget, so DNSSEC chain-building gives up and returns SERVFAIL on
   # signed zones - and the failure is then CACHED, so names stay broken until
-  # an rndc flush. Symptom: dig @<ext-vm> www.iana.org -> SERVFAIL while
+  # an rndc flush. Symptom: dig @<svc-vm> www.iana.org -> SERVFAIL while
   # dig +cd -> NOERROR. There is no named.conf option for this; -4 is the
   # documented switch, and /etc/default/named only exists after the install.
   - sed -i 's|^OPTIONS=.*|OPTIONS="-u bind -4"|' /etc/default/named
@@ -204,6 +228,7 @@ runcmd:
   - named-checkzone ${dns_zone} /etc/bind/db.${dns_zone}
   - systemctl enable named
   - systemctl restart named
+  - systemctl restart rsyslog
   - |
     if systemctl is-active --quiet named; then
       echo "named is running: recursive resolver + authoritative for ${dns_zone}"

@@ -140,7 +140,7 @@ locals {
   # (var.azure_nic_xc_ce01_slo_ip_addr / ..._ce02_...) or the published F5 RE
   # prefixes - without touching the cloud-init template.
   router_egress_allowed = [
-    var.azure_nic_ext_ip_addr, # proxy VM: Tinyproxy + BIND recursion
+    var.azure_nic_svc_ip_addr, # services VM: Tinyproxy + BIND recursion
   ]
 
   router_bgp_neighbors = [
@@ -160,9 +160,11 @@ locals {
     bgp_neighbors          = local.router_bgp_neighbors
     bgp_maximum_paths_ebgp = var.router_bgp_maximum_paths_ebgp
     dnat_rules             = local.router_dnat_rules
+    router_id              = var.azure_nic_rtr_ext_ip_addr # BGP router-id = eth1 address
     vip_cidr               = var.f5xc_vip_cidr
     vnet_cidr              = var.azure_cidr_vnet
     egress_allowed         = local.router_egress_allowed
+    syslog_host            = var.azure_nic_obs_ip_addr
     ext_gateway            = cidrhost(var.azure_cidr_sub_ext, 1) # 10.1.10.1, Azure ext subnet
   })
 }

@@ -51,7 +51,7 @@ resource "azurerm_linux_virtual_machine" "tf_azure_vm_jmp" {
     local_sensitive_file.tf_local_ssh_private_key,
     azurerm_ssh_public_key.tf_azure_ssh_key,
     azurerm_linux_virtual_machine.tf_azure_vm_rtr,                   # egress provider
-    azurerm_linux_virtual_machine.tf_azure_vm_ext,                   # proxy provider (tinyproxy)
+    azurerm_linux_virtual_machine.tf_azure_vm_svc,                   # proxy provider (tinyproxy)
     azurerm_subnet_route_table_association.tf_azure_route_assoc_adm, # default route to the router
   ]
 }
@@ -75,12 +75,13 @@ resource "azurerm_network_interface" "tf_azure_nic_jmp" {
 locals {
   cloud_init_jmp = templatefile("${path.module}/cloud-init-jmp.yaml.tpl", {
     admin_username = var.azure_admin_username
-    proxy_ip       = var.azure_nic_ext_ip_addr # Tinyproxy runs on the external VM
+    proxy_ip       = var.azure_nic_svc_ip_addr # Tinyproxy runs on the services VM
     proxy_port     = var.tinyproxy_port
     vnet_cidr      = var.azure_cidr_vnet
-    dns_ip         = var.azure_nic_ext_ip_addr # BIND also runs on the external VM
-    ntp_ip         = var.azure_nic_ext_ip_addr # ... and so does chrony
+    dns_ip         = var.azure_nic_svc_ip_addr # BIND also runs on the services VM
+    ntp_ip         = var.azure_nic_svc_ip_addr # ... and so does chrony
     dns_zone       = var.dns_internal_zone
+    vip_cidr       = var.f5xc_vip_cidr
     # Same keypair Terraform installs as admin_ssh_key on every VM, so the
     # jumphost can hop to them without a password.
     ssh_private_key = tls_private_key.tf_tls_ssh_key.private_key_openssh

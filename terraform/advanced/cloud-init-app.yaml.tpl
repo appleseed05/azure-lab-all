@@ -6,12 +6,12 @@ write_files:
     owner: root:root
     permissions: '0644'
     content: |
-      // Managed by cloud-init (cloud-init-int.yaml.tpl).
-      // Sends all apt traffic through the Tinyproxy instance on the external VM.
+      // Managed by cloud-init (cloud-init-app.yaml.tpl).
+      // Sends all apt traffic through the Tinyproxy instance on the services VM.
       Acquire::http::Proxy "http://${proxy_ip}:${proxy_port}";
       Acquire::https::Proxy "http://${proxy_ip}:${proxy_port}";
 
-  # --- NTP client: use the lab NTP server on the external VM -------------------
+  # --- NTP client: use the lab NTP server on the services VM -------------------
   - path: /etc/chrony/conf.d/10-lab-ntp-client.conf
     owner: root:root
     permissions: '0644'
@@ -53,17 +53,32 @@ write_files:
           listen [::]:80 default_server;
           server_name _;
 
+          # Ship access logs straight to Alloy on the observability VM. nginx
+          # speaks remote syslog natively, so no local agent is needed here.
+          # The local file is kept as well for on-box troubleshooting.
+          access_log syslog:server=${syslog_host}:514,facility=local7,tag=nginx,severity=info;
+          access_log /var/log/nginx/access.log;
+          error_log  syslog:server=${syslog_host}:514,facility=local7,tag=nginx,severity=error;
+
           add_header X-Origin-Server   $server_addr always;
           add_header X-Seen-Client-IP  $remote_addr always;
 
           location / {
               default_type text/plain;
-              return 200 "===== NGINX origin (internal VM) =====\nOrigin server IP      : $server_addr:$server_port\nRequest received from : $remote_addr:$remote_port   \nOriginal client (XFF) : $http_x_forwarded_for\nHost header           : $host\nURI                   : $request_uri\nDate                  : $time_iso8601\n";
+              return 200 "===== NGINX origin (application VM) =====\nOrigin server IP      : $server_addr:$server_port\nRequest received from : $remote_addr:$remote_port   \nOriginal client (XFF) : $http_x_forwarded_for\nHost header           : $host\nURI                   : $request_uri\nDate                  : $time_iso8601\n";
           }
       }
 
+  # Forward this host's own syslog (chronyd, sshd, ...) to the obs VM. nginx
+  # bypasses this and talks to the collector directly, see above.
+  - path: /etc/rsyslog.d/60-lab-forward.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      *.* @${syslog_host}:514
+
 runcmd:
-  # Wait until apt works. apt now goes through the Tinyproxy on the external VM
+  # Wait until apt works. apt now goes through the Tinyproxy on the services VM
   # (see /etc/apt/apt.conf.d/00-lab-proxy above), so this loop transparently
   # waits for BOTH the VyOS egress AND tinyproxy to be up.
   - |
@@ -82,17 +97,21 @@ runcmd:
   # config, so `enable --now` would be a no-op: restart to load the new site.
   - systemctl enable nginx
   - nginx -t && systemctl restart nginx
+  - systemctl restart rsyslog
   # Proxy for interactive shells (curl, wget, ...). Appended, never overwritten:
   # /etc/environment already holds PATH and clobbering it breaks login sessions.
   # 169.254.169.254 MUST bypass the proxy or the Azure IMDS / waagent breaks.
+  # ${vip_cidr} and .${dns_zone} matter too: the XC VIP and the internal zone
+  # are lab-internal, and Tinyproxy could not reach them anyway - its host
+  # resolves via Azure DNS, so .${dns_zone} names are NXDOMAIN there.
   - |
     cat >> /etc/environment <<'ENVEOF'
     http_proxy="http://${proxy_ip}:${proxy_port}"
     https_proxy="http://${proxy_ip}:${proxy_port}"
     HTTP_PROXY="http://${proxy_ip}:${proxy_port}"
     HTTPS_PROXY="http://${proxy_ip}:${proxy_port}"
-    no_proxy="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},.internal.cloudapp.net"
-    NO_PROXY="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},.internal.cloudapp.net"
+    no_proxy="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},${vip_cidr},.${dns_zone},.internal.cloudapp.net,.lan"
+    NO_PROXY="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},${vip_cidr},.${dns_zone},.internal.cloudapp.net,.lan"
     ENVEOF
   # --- Point this VM at the lab NTP server ------------------------------------
   # The Azure image syncs chrony to the host clock via "refclock PHC

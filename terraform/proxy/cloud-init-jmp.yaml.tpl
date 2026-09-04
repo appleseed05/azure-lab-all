@@ -8,7 +8,7 @@
 # used: it runs early in the boot and has no retry, so one failed apt-get
 # update leaves xrdp uninstalled and the jumphost unreachable on 3389 forever.
 # Everything is done from runcmd behind a retry loop instead, the same way
-# cloud-init-int.yaml.tpl does it.
+# cloud-init-app.yaml.tpl does it.
 package_update: false
 
 write_files:
@@ -17,7 +17,7 @@ write_files:
     permissions: '0644'
     content: |
       // Managed by cloud-init (cloud-init-jmp.yaml.tpl).
-      // Sends all apt traffic through the Tinyproxy instance on the external VM.
+      // Sends all apt traffic through the Tinyproxy instance on the services VM.
       Acquire::http::Proxy "http://${proxy_ip}:${proxy_port}";
       Acquire::https::Proxy "http://${proxy_ip}:${proxy_port}";
 
@@ -36,7 +36,7 @@ write_files:
     encoding: b64
     content: ${base64encode(ssh_private_key)}
 
-  # --- NTP client: use the lab NTP server on the external VM -------------------
+  # --- NTP client: use the lab NTP server on the services VM -------------------
   - path: /etc/chrony/conf.d/10-lab-ntp-client.conf
     owner: root:root
     permissions: '0644'
@@ -95,14 +95,14 @@ write_files:
             "HTTPProxy": "${proxy_ip}:${proxy_port}",
             "SSLProxy": "${proxy_ip}:${proxy_port}",
             "UseHTTPProxyForAllProtocols": true,
-            "Passthrough": "localhost, 127.0.0.1, ${vnet_cidr}",
+            "Passthrough": "localhost, 127.0.0.1, ${vnet_cidr}, ${vip_cidr}, .${dns_zone}",
             "Locked": false
           }
         }
       }
 
 runcmd:
-  # Wait until apt works. apt now goes through the Tinyproxy on the external VM
+  # Wait until apt works. apt now goes through the Tinyproxy on the services VM
   # (see /etc/apt/apt.conf.d/00-lab-proxy above), so this loop transparently waits
   # for BOTH the VyOS egress AND tinyproxy to be up (up to 60 x 20s = 20 min).
   # NOTE: plain `apt-get update` exits 0 even when every mirror is unreachable
@@ -135,14 +135,17 @@ runcmd:
   # Proxy for interactive shells (curl, wget, ...). Appended, never overwritten:
   # /etc/environment already holds PATH and clobbering it breaks login sessions.
   # 169.254.169.254 MUST bypass the proxy or the Azure IMDS / waagent breaks.
+  # ${vip_cidr} and .${dns_zone} matter too: the XC VIP and the internal zone
+  # are lab-internal, and Tinyproxy could not reach them anyway - its host
+  # resolves via Azure DNS, so .${dns_zone} names are NXDOMAIN there.
   - |
     cat >> /etc/environment <<'ENVEOF'
     http_proxy="http://${proxy_ip}:${proxy_port}"
     https_proxy="http://${proxy_ip}:${proxy_port}"
     HTTP_PROXY="http://${proxy_ip}:${proxy_port}"
     HTTPS_PROXY="http://${proxy_ip}:${proxy_port}"
-    no_proxy="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},.internal.cloudapp.net"
-    NO_PROXY="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},.internal.cloudapp.net"
+    no_proxy="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},${vip_cidr},.${dns_zone},.internal.cloudapp.net,.lan"
+    NO_PROXY="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},${vip_cidr},.${dns_zone},.internal.cloudapp.net,.lan"
     ENVEOF
   # --- Point this VM at the lab NTP server ------------------------------------
   # The Azure image syncs chrony to the host clock via "refclock PHC

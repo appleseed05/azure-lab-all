@@ -29,17 +29,17 @@ write_files:
 
         # -------------------------------------------------------------
         # 1. Source NAT (Outbound Internet via DMZ interface eth0)
-        # All traffic from VNet (10.1.0.0/16) is masqueraded out eth0
+        # All traffic from VNet (${vnet_cidr}) is masqueraded out eth0
         # -------------------------------------------------------------
         set nat source rule 100 outbound-interface name 'eth0'
-        set nat source rule 100 source address '10.1.0.0/16'
+        set nat source rule 100 source address '${vnet_cidr}'
         set nat source rule 100 translation address 'masquerade'
 
         # -------------------------------------------------------------
         # 2. BGP Configuration (VyOS 1.5 Syntax)
         # -------------------------------------------------------------
         set protocols bgp system-as ${bgp_asn}
-        set protocols bgp parameters router-id '10.1.10.254'
+        set protocols bgp parameters router-id '${router_id}'
 
         %{ for n in bgp_neighbors ~}
         set protocols bgp neighbor ${n.ip} remote-as ${n.remote_asn}
@@ -49,6 +49,11 @@ write_files:
 
         # ECMP: both CEs share ASN 65100, so FRR needs multipath-relax
         set protocols bgp parameters bestpath as-path 'multipath-relax'
+
+        # Log BGP adjacency up/down. Without this FRR never generates the
+        # %ADJCHANGE messages at all. Note it is only half the job - see the
+        # FRR log-level block at the end of this script.
+        set protocols bgp parameters log-neighbor-changes
         
         # Accept only the XC VIP range from the CEs; advertise nothing back
         set policy prefix-list XC-VIPS rule 10 action 'permit'
@@ -79,7 +84,7 @@ write_files:
 
         # -------------------------------------------------------------
         # 4. Egress firewall - only the proxy may reach the Internet directly
-        # Everything else in the VNet must go through Tinyproxy on the ext VM.
+        # Everything else in the VNet must go through Tinyproxy on the services VM.
         # This filters the FORWARD chain only, so the router's own traffic and
         # anything staying inside the VNet are untouched (intra-VNet traffic
         # never reaches this router: the Azure VNet system route is more
@@ -94,7 +99,7 @@ write_files:
         set firewall ipv4 forward filter rule 10 action 'accept'
         set firewall ipv4 forward filter rule 10 state 'established'
         set firewall ipv4 forward filter rule 10 state 'related'
-        set firewall ipv4 forward filter rule 10 log
+        # set firewall ipv4 forward filter rule 10 log
         set firewall ipv4 forward filter rule 10 description 'Return traffic for existing sessions'
         # Deliberately NOT logged: this rule matches every packet of every
         # established session (millions), so logging it would bury the signal
@@ -111,16 +116,66 @@ write_files:
 
         # Everything else from the VNet: drop and log. `log` writes to syslog,
         # which is the hook for a SIEM later - point it at a collector with
-        # `set system syslog host <ip> facility all level info`.
+        # `set system syslog remote <ip> facility all level info` (see section 5).
         set firewall ipv4 forward filter rule 90 action 'drop'
         set firewall ipv4 forward filter rule 90 outbound-interface name 'eth0'
         set firewall ipv4 forward filter rule 90 source address '${vnet_cidr}'
         set firewall ipv4 forward filter rule 90 log
         set firewall ipv4 forward filter rule 90 description 'DROP direct egress - use the proxy'
 
+        # -------------------------------------------------------------
+        # 5. Remote syslog to the observability VM
+        # NOTE: the node is 'remote', NOT 'host' - VyOS 1.4 renamed it, and the
+        # old form fails. Sends both the FRR/BGP messages and the kernel
+        # firewall drops (rule 90 / rule 20 'log') to Alloy on the obs VM.
+        # -------------------------------------------------------------
+        set system syslog remote '${syslog_host}' facility all level 'info'
+        set system syslog remote '${syslog_host}' protocol 'udp'
+        set system syslog remote '${syslog_host}' port '514'
+
         commit
         save
 
         touch $MARKER
+        sync
+
+        # Reboot once, immediately after bootstrapping.
+        #
+        # The config session this script runs in leaves the VyOS config
+        # subsystem unable to accept further changes until the next boot: every
+        # subsequent `set` fails with "Set failed", including unrelated ones
+        # like `set system time-zone`. A reboot clears it. Without this you
+        # cannot toggle e.g. `rule 90 disable` or rule 10 logging by hand until
+        # you have rebooted the router manually.
+        #
+        # Safe to do here because MARKER is written ABOVE: on the way back up
+        # this whole block is skipped, the saved config.boot is loaded normally,
+        # and the router returns fully configured and immediately editable.
+        # Never move the touch below this line - the script would re-run every
+        # boot and the router would reboot-loop.
+        #
+        # /sbin/reboot, not the op-mode `reboot`, which prompts for confirmation
+        # and would hang a non-interactive boot script.
+        /sbin/reboot
         exit
       fi
+
+      # -----------------------------------------------------------------
+      # Runs on EVERY boot, deliberately OUTSIDE the MARKER guard above.
+      #
+      # FRR logs %ADJCHANGE (BGP neighbour up/down) at *informational*, but
+      # VyOS renders `log syslog notifications` by default, so those messages
+      # are dropped and BGP looks silent in Loki even though the syslog path
+      # works. There is no CLI knob for this: vyos/frrender.py switches on the
+      # presence of a file -
+      #     if os.path.exists(frr_debug_enable):  -> log syslog informational
+      # with frr_debug_enable = '/tmp/vyos.frr.debug' (vyos/defaults.py).
+      #
+      # /tmp is wiped on reboot, hence every boot. The touch makes any future
+      # `commit` re-render keep informational; the vtysh call applies it now
+      # without waiting for a re-render. Side effect: this is VyOS's FRR debug
+      # switch, so it also enables `log unique-id` (the [EC nnnn] prefixes).
+      # Remove both lines to go back to notifications-only.
+      # -----------------------------------------------------------------
+      touch /tmp/vyos.frr.debug
+      /usr/bin/vtysh -c 'configure terminal' -c 'log syslog informational' -c 'end' >/dev/null 2>&1 || true

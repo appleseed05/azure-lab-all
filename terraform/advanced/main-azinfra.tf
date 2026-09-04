@@ -76,9 +76,9 @@ resource "azurerm_route_table" "tf_azure_route_ext" {
 
   route {
     name                   = "xc-vip-lb"
-    address_prefix         = "192.168.200.0/24"
+    address_prefix         = var.f5xc_vip_cidr
     next_hop_type          = "VirtualAppliance"
-    next_hop_in_ip_address = "10.1.10.250"
+    next_hop_in_ip_address = var.azure_lbce_ip # Azure ILB frontend, fixed next hop for the CE-announced VIP
   }
 
   tags = {

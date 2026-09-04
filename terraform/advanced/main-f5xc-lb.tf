@@ -10,12 +10,13 @@ resource "volterra_origin_pool" "tf_f5xc_pool_ext_nginx" {
 
   origin_servers {
     private_ip {
-      ip             = azurerm_network_interface.tf_azure_nic_int.private_ip_address
+      ip             = azurerm_network_interface.tf_azure_nic_app.private_ip_address
       inside_network = true
       site_locator {
         virtual_site {
           name      = volterra_virtual_site.tf_f5xc_vsite.name
           namespace = volterra_virtual_site.tf_f5xc_vsite.namespace
+          # tenant    = var.f5xc_tenant_name
         }
       }
     }
@@ -32,7 +33,8 @@ resource "volterra_http_loadbalancer" "tf_f5xc_lb_nginx" {
   name      = "${var.prefix}-lb-nginx"
   namespace = var.f5xc_namespace_name
 
-  domains = [var.f5xc_lb_nginx_fqdn]
+  # Already a list, so no extra brackets - wrapping it would give a list of lists.
+  domains = var.f5xc_lb_nginx_fqdn
 
   http {
     dns_volterra_managed = false
@@ -54,6 +56,7 @@ resource "volterra_http_loadbalancer" "tf_f5xc_lb_nginx" {
         virtual_site {
           name      = volterra_virtual_site.tf_f5xc_vsite.name
           namespace = volterra_virtual_site.tf_f5xc_vsite.namespace
+          # tenant    = var.f5xc_tenant_name
         }
         ip = var.f5xc_lb_nginx_vip
       }

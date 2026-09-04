@@ -76,11 +76,13 @@ azure_lbce_ip = "10.1.10.250"
 azure_vm_ce01 = "vm-ce01"
 azure_vm_ce02 = "vm-ce02"
 
-azure_nic_ext_ip_addr = "10.1.10.5"
+azure_nic_svc_ip_addr = "10.1.10.5"
 
-azure_nic_int_ip_addr = "10.1.20.5"
+azure_nic_app_ip_addr = "10.1.20.5"
 
 azure_nic_jmp_ip_addr = "10.1.1.5"
+
+azure_nic_obs_ip_addr = "10.1.10.31"
 
 azure_nic_rtr_ext_ip_addr = "10.1.10.254"
 azure_nic_rtr_dmz_ip_addr = "10.1.90.254"
@@ -95,11 +97,11 @@ azure_nic_xc_ce02_sli_ip_addr = "10.1.20.216"
 # ---------------------------------------------------------------
 # Azure VM size
 # ---------------------------------------------------------------
-azure_vm_size_srv   = "Standard_B2s"    # 2cpu - 4GB ram
-azure_vm_size_jmp   = "Standard_D2s_v3" # 2cpu - 8GB ram (2 thread per core)
-azure_vm_size_linux = "Standard_B2s"    # 2cpu - 4GB ram
-azure_vm_size_rtr   = "Standard_D8s_v3" # 2cpu - 8GB ram (2 thread per core)
-azure_vm_size_xc_ce = "Standard_D8_v4"  # 8cpu - 32GB ram
+azure_vm_size_srv   = "Standard_B2s"
+azure_vm_size_jmp   = "Standard_D2s_v3"
+azure_vm_size_linux = "Standard_B2s"
+azure_vm_size_rtr   = "Standard_D8s_v3"
+azure_vm_size_xc_ce = "Standard_D8_v4"
 
 # ---------------------------------------------------------------
 # Azure marketplace images
@@ -135,15 +137,24 @@ image_version_ubuntu  = "latest"
 router_bgp_asn = 65001
 router_bgp_maximum_paths_ebgp = 4
 
+
 # ---------------------------------------------------------------
-# Internal DNS (External VM)
+# Internal DNS (Services VM)
 # ---------------------------------------------------------------
 dns_internal_zone = "f5demo.lan"
 
+
 # ---------------------------------------------------------------
-# Tinyproxy (External VM)
+# Tinyproxy (Services VM)
 # ---------------------------------------------------------------
 tinyproxy_port = 8888
+
+
+# ---------------------------------------------------------------
+# Observability (Loki / Grafana / Alloy)
+# ---------------------------------------------------------------
+loki_retention_period ="168h"
+
 
 # ---------------------------------------------------------------
 # XC
@@ -155,5 +166,5 @@ tinyproxy_port = 8888
 f5xc_bgp_asn           = "65100"
 f5xc_vip_cidr          = "192.168.200.0/24"
 
-f5xc_lb_nginx_fqdn        = ["mylab.mydomain.com", "mylab.internal.local"]
+f5xc_lb_nginx_fqdn        = ["mylab.mydomain.com", "mylab.otherdomain.net"]
 f5xc_lb_nginx_vip         = "192.168.200.5"

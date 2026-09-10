@@ -1,11 +1,14 @@
 #cloud-config
-# Observability VM: Loki (log store) + Grafana (UI) + Alloy (collector).
+# The jumphost has no public IP and no NAT gateway: its only way out is the
+# default route to the VyOS router, which only carries traffic once the router
+# has booted AND committed its source-NAT masquerade rule. Cloud-init here can
+# easily start before that.
 #
-# It sits in the external subnet but is deliberately NOT in
-# local.router_egress_allowed, so it has no direct Internet access - every
-# download goes through Tinyproxy on the services VM. That is also why the
-# Grafana signing key is fetched with an explicit -x proxy below: runcmd does
-# NOT source /etc/environment, so the shell here has no http_proxy of its own.
+# So the built-in `packages:` / `package_update:` module is deliberately NOT
+# used: it runs early in the boot and has no retry, so one failed apt-get
+# update leaves xrdp uninstalled and the jumphost unreachable on 3389 forever.
+# Everything is done from runcmd behind a retry loop instead, the same way
+# cloud-init-app.yaml.tpl does it.
 package_update: false
 
 write_files:
@@ -13,16 +16,44 @@ write_files:
     owner: root:root
     permissions: '0644'
     content: |
-      // Managed by cloud-init (cloud-init-obs.yaml.tpl).
+      // Managed by cloud-init (cloud-init-jmp.yaml.tpl).
+      // Sends all apt traffic through the Tinyproxy instance on the services VM.
       Acquire::http::Proxy "http://${proxy_ip}:${proxy_port}";
       Acquire::https::Proxy "http://${proxy_ip}:${proxy_port}";
 
+  # --- SSH private key, so the jumphost can reach the other lab VMs -----------
+  # Staged in /root and NOT written straight to /home/${admin_username}/.ssh:
+  # cloud-init runs the write_files module BEFORE users_groups (see the module
+  # order in /etc/cloud/cloud.cfg), so the "${admin_username}" user does not
+  # exist yet at this point and "owner: ${admin_username}" would fail outright.
+  # runcmd runs in the final stage, by which time the user is there.
+  #
+  # encoding b64 keeps the multi-line OpenSSH key on ONE yaml line, so the PEM
+  # body needs no indentation juggling inside this block scalar.
+  - path: /root/lab-id-ed25519
+    owner: root:root
+    permissions: '0600'
+    encoding: b64
+    content: ${base64encode(ssh_private_key)}
+
+  # --- NTP client: use the lab NTP server on the services VM -------------------
   - path: /etc/chrony/conf.d/10-lab-ntp-client.conf
     owner: root:root
     permissions: '0644'
     content: |
+      # Managed by cloud-init. chrony.conf already does "confdir /etc/chrony/conf.d".
       server ${ntp_ip} iburst
 
+  # --- DNS: staged here, installed at the very END of runcmd -------------------
+  # NOT written straight to /etc/netplan: the lab resolver only knows the root
+  # hints and f5demo.lan, so switching DNS before the package installs finish
+  # would break name resolution mid-provisioning. Azure DHCP DNS stays in use
+  # for the whole of cloud-init and is swapped out last.
+  #
+  # use-dns:false is required. Azure DHCP installs 168.63.129.16 as a *link*
+  # resolver on eth0, and systemd-resolved prefers link servers over anything
+  # global, so a resolved.conf drop-in alone would be silently ignored.
+  # route-metric is repeated from 50-cloud-init.yaml so the merge cannot drop it.
   - path: /root/99-lab-dns.yaml
     owner: root:root
     permissions: '0600'
@@ -38,605 +69,232 @@ write_files:
               addresses: [${dns_ip}]
               search: [${dns_zone}]
 
-  # --- Loki: single-binary, filesystem storage -------------------------------
-  # schema v13 + tsdb is required for structured metadata, which is what the
-  # OTLP ingestion path uses. Bound to loopback: Grafana and Alloy are local,
-  # and nothing else should talk to Loki directly.
-  - path: /root/loki-config.yml
-    owner: root:root
-    permissions: '0644'
-    content: |
-      auth_enabled: false
-
-      server:
-        http_listen_address: 127.0.0.1
-        http_listen_port: 3100
-        grpc_listen_address: 127.0.0.1
-        grpc_listen_port: 9096
-        log_level: warn
-
-      common:
-        instance_addr: 127.0.0.1
-        path_prefix: /var/lib/loki
-        storage:
-          filesystem:
-            chunks_directory: /var/lib/loki/chunks
-            rules_directory: /var/lib/loki/rules
-        replication_factor: 1
-        ring:
-          instance_addr: 127.0.0.1
-          kvstore:
-            store: inmemory
-
-      schema_config:
-        configs:
-          - from: 2020-01-01
-            store: tsdb
-            object_store: filesystem
-            schema: v13
-            index:
-              prefix: index_
-              period: 24h
-
-      limits_config:
-        retention_period: ${loki_retention}
-        allow_structured_metadata: true
-        volume_enabled: true
-
-      compactor:
-        working_directory: /var/lib/loki/compactor
-        retention_enabled: true
-        delete_request_store: filesystem
-
-      # This VM cannot reach the Internet directly; leaving analytics on just
-      # produces periodic failed-connection noise in the journal.
-      analytics:
-        reporting_enabled: false
-
-  # --- Alloy: syslog in, Loki out --------------------------------------------
-  - path: /root/config.alloy
-    owner: root:root
-    permissions: '0644'
-    content: |
-      // Syslog receiver for the whole lab: VyOS (kernel firewall + FRR/BGP),
-      // and rsyslog/nginx forwarding from the services and application VMs.
-      // RFC3164 because that is what VyOS and stock rsyslog emit.
-      loki.source.syslog "lab" {
-        listener {
-          address       = "0.0.0.0:514"
-          protocol      = "udp"
-          syslog_format = "rfc3164"
-          labels        = { job = "syslog" }
-        }
-        relabel_rules = loki.relabel.syslog_meta.rules
-        forward_to    = [loki.write.local.receiver]
-      }
-
-      // Promote ONLY low-cardinality syslog fields to Loki labels.
-      //
-      // Do NOT add SRC/DST/SPT/DPT from the VyOS firewall lines here. Each
-      // unique value would create a new Loki stream - thousands of them - and
-      // that is the classic way to make Loki fall over. Those fields stay in
-      // the log body and get extracted at query time, e.g.
-      //   {app="kernel"} |= "FWD-filter-90-D" | pattern "<_>SRC=<src> DST=<dst><_>"
-      loki.relabel "syslog_meta" {
-        forward_to = []
-        rule {
-          source_labels = ["__syslog_message_hostname"]
-          target_label  = "host"
-        }
-        rule {
-          source_labels = ["__syslog_message_app_name"]
-          target_label  = "app"
-        }
-        rule {
-          source_labels = ["__syslog_message_severity"]
-          target_label  = "severity"
-        }
-      }
-
-      loki.write "local" {
-        endpoint {
-          url = "http://127.0.0.1:3100/loki/api/v1/push"
-        }
-      }
-
-  # Alloy runs as the unprivileged 'alloy' user, which cannot bind port 514.
-  # Grant just that capability rather than moving the lab to a non-standard port.
-  - path: /etc/systemd/system/alloy.service.d/10-bind-syslog-port.conf
-    owner: root:root
-    permissions: '0644'
-    content: |
-      [Service]
-      AmbientCapabilities=CAP_NET_BIND_SERVICE
-      CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-
-  # --- Grafana: provision the Loki datasource ---------------------------------
-  # A provisioning file, not grafana.ini: grafana.ini is a dpkg conffile and
-  # replacing it would fight the package on every upgrade.
-  - path: /root/loki-datasource.yaml
-    owner: root:root
-    permissions: '0644'
-    content: |
-      apiVersion: 1
-      datasources:
-        - name: Loki
-          type: loki
-          # Pinned so the provisioned dashboard can reference it. Safe on a
-          # FRESH deploy only: adding a uid to an ALREADY-provisioned
-          # datasource makes Grafana fail with "Datasource provisioning error:
-          # data source not found" and refuse to start at all (the provisioning
-          # module failure cascades into the HTTP server never coming up).
-          uid: loki
-          access: proxy
-          url: http://127.0.0.1:3100
-          isDefault: true
-          editable: true
-          jsonData:
-            maxLines: 5000
-
-  # --- Grafana dashboard: provider + the dashboard itself --------------------
-  - path: /root/grafana-dashboards.yaml
-    owner: root:root
-    permissions: '0644'
-    content: |
-      apiVersion: 1
-      providers:
-        - name: lab
-          orgId: 1
-          folder: Lab
-          type: file
-          disableDeletion: false
-          updateIntervalSeconds: 30
-          allowUiUpdates: true
-          options:
-            path: /var/lib/grafana/dashboards
-
-  # "Lab Logs": $host / $app dropdowns + a $search regex box, a stacked volume
-  # graph, the log panel, and two firewall-drop breakdowns.
+  # Firefox on Ubuntu 24.04 is the Mozilla *snap*, so the usual
+  # /usr/lib/firefox/distribution/policies.json does nothing. The snap declares a
+  # system-files plug named "etc-firefox" (auto-connected via Mozilla's snap
+  # declaration) which lets the confined browser read /etc/firefox - that is the
+  # only policy path that works here. Keys below are from the browser omni.ja
+  # schema at modules/policies/ProxyPolicies.sys.mjs.
   #
-  # NOTE on the LogQL `pattern` stages below: consecutive captures are ILLEGAL
-  # ("found consecutive capture '<dst><_>'"), so there must be literal text
-  # between them - hence "... DST=<dst> LEN=<_>" rather than "DST=<dst><_>".
-  - path: /root/lab-logs.json
+  # NOTE: policies.json must be STRICT JSON - Firefox parses it with JSON.parse,
+  # so a // comment inside the braces below makes it reject the whole file.
+  #
+  # "Locked": false means Firefox still applies the proxy (Policies.sys.mjs
+  # passes PoliciesUtils.setDefaultPref, which writes the pref DEFAULT branch),
+  # but it skips both disallowFeature("changeProxySettings") and lockPref(), so
+  # the settings stay editable. A manual change lands on the user branch, which
+  # overrides the default and survives restarts. Flip to true to grey it out.
+  # XFCE window-manager settings, pre-seeded before the first login.
+  #
+  # use_compositing MUST be false under xrdp. With it on, xfwm4 logs
+  # "Another compositing manager is running on screen 0" and any client that
+  # asks for an accelerated/ARGB surface - Firefox above all - blanks the whole
+  # session and takes the mouse cursor with it, recoverable only by dropping the
+  # RDP connection and reconnecting. This VM has no usable GPU to composite
+  # with: hyperv_drm provides /dev/dri/card1 but NO render node, so xorgxrdp's
+  # glamor/DRI3 path fails at startup ("/dev/dri/renderD128 open failed") and X
+  # falls back to DRISWRAST. Compositing buys nothing here and costs the session.
+  #
+  # Staged in /root because write_files runs before the user exists; installed
+  # into the user's profile from runcmd, same pattern as the SSH key.
+  - path: /root/xfwm4.xml
+    owner: root:root
+    permissions: '0644'
+    content: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <channel name="xfwm4" version="1.0">
+        <property name="general" type="empty">
+          <property name="use_compositing" type="bool" value="false"/>
+        </property>
+      </channel>
+
+  - path: /etc/firefox/policies/policies.json
     owner: root:root
     permissions: '0644'
     content: |
       {
-        "uid": "lab-logs",
-        "title": "Lab Logs",
-        "tags": [
-          "lab",
-          "loki"
-        ],
-        "timezone": "browser",
-        "schemaVersion": 39,
-        "version": 1,
-        "editable": true,
-        "refresh": "1m",
-        "time": {
-          "from": "now-1h",
-          "to": "now"
-        },
-        "templating": {
-          "list": [
-            {
-              "name": "host",
-              "label": "Host",
-              "type": "query",
-              "datasource": {
-                "type": "loki",
-                "uid": "loki"
-              },
-              "definition": "label_values(host)",
-              "query": {
-                "label": "host",
-                "refId": "Loki-host"
-              },
-              "refresh": 1,
-              "includeAll": true,
-              "allValue": ".*",
-              "multi": true,
-              "sort": 1,
-              "current": {
-                "text": [
-                  "All"
-                ],
-                "value": [
-                  ".*"
-                ]
-              },
-              "options": [],
-              "hide": 0
-            },
-            {
-              "name": "app",
-              "label": "App / origin",
-              "type": "query",
-              "datasource": {
-                "type": "loki",
-                "uid": "loki"
-              },
-              "definition": "label_values(app)",
-              "query": {
-                "label": "app",
-                "refId": "Loki-app"
-              },
-              "refresh": 1,
-              "includeAll": true,
-              "allValue": ".*",
-              "multi": true,
-              "sort": 1,
-              "current": {
-                "text": [
-                  "All"
-                ],
-                "value": [
-                  ".*"
-                ]
-              },
-              "options": [],
-              "hide": 0
-            },
-            {
-              "name": "search",
-              "label": "Search (regex)",
-              "type": "textbox",
-              "query": "",
-              "current": {
-                "text": "",
-                "value": ""
-              },
-              "hide": 0,
-              "options": []
-            }
-          ]
-        },
-        "panels": [
-          {
-            "id": 1,
-            "title": "Log volume by app",
-            "type": "timeseries",
-            "datasource": {
-              "type": "loki",
-              "uid": "loki"
-            },
-            "gridPos": {
-              "x": 0,
-              "y": 0,
-              "w": 24,
-              "h": 7
-            },
-            "targets": [
-              {
-                "refId": "A",
-                "datasource": {
-                  "type": "loki",
-                  "uid": "loki"
-                },
-                "expr": "sum by (app) (count_over_time({job=\"syslog\", host=~\"$host\", app=~\"$app\"} |~ \"$search\" [$__interval]))",
-                "queryType": "range",
-                "legendFormat": "{{app}}"
-              }
-            ],
-            "fieldConfig": {
-              "defaults": {
-                "custom": {
-                  "drawStyle": "bars",
-                  "fillOpacity": 70,
-                  "lineWidth": 0,
-                  "stacking": {
-                    "mode": "normal",
-                    "group": "A"
-                  }
-                }
-              },
-              "overrides": []
-            },
-            "options": {
-              "legend": {
-                "displayMode": "list",
-                "placement": "bottom",
-                "showLegend": true
-              },
-              "tooltip": {
-                "mode": "multi",
-                "sort": "desc"
-              }
-            }
+        "policies": {
+          "Proxy": {
+            "Mode": "manual",
+            "HTTPProxy": "${proxy_ip}:${proxy_port}",
+            "SSLProxy": "${proxy_ip}:${proxy_port}",
+            "UseHTTPProxyForAllProtocols": true,
+            "Passthrough": "localhost, 127.0.0.1, ${vnet_cidr}, ${vip_cidr}, .${dns_zone}",
+            "Locked": false
           },
-          {
-            "id": 2,
-            "title": "Logs",
-            "type": "logs",
-            "datasource": {
-              "type": "loki",
-              "uid": "loki"
-            },
-            "gridPos": {
-              "x": 0,
-              "y": 7,
-              "w": 24,
-              "h": 14
-            },
-            "targets": [
-              {
-                "refId": "A",
-                "datasource": {
-                  "type": "loki",
-                  "uid": "loki"
-                },
-                "expr": "{job=\"syslog\", host=~\"$host\", app=~\"$app\"} |~ \"$search\"",
-                "queryType": "range"
-              }
-            ],
-            "options": {
-              "showTime": true,
-              "showLabels": false,
-              "showCommonLabels": false,
-              "wrapLogMessage": true,
-              "prettifyLogMessage": false,
-              "enableLogDetails": true,
-              "dedupStrategy": "none",
-              "sortOrder": "Descending"
-            }
-          },
-          {
-            "id": 3,
-            "title": "Firewall drops - top destinations",
-            "type": "timeseries",
-            "datasource": {
-              "type": "loki",
-              "uid": "loki"
-            },
-            "gridPos": {
-              "x": 0,
-              "y": 21,
-              "w": 12,
-              "h": 8
-            },
-            "targets": [
-              {
-                "refId": "A",
-                "datasource": {
-                  "type": "loki",
-                  "uid": "loki"
-                },
-                "expr": "topk(10, sum by (dst) (count_over_time({app=\"kernel\"} |= \"FWD-filter-90-D\" | pattern \"<_>SRC=<src> DST=<dst> LEN=<_>\" [$__interval])))",
-                "queryType": "range",
-                "legendFormat": "{{dst}}"
-              }
-            ],
-            "fieldConfig": {
-              "defaults": {
-                "custom": {
-                  "drawStyle": "bars",
-                  "fillOpacity": 70,
-                  "lineWidth": 0,
-                  "stacking": {
-                    "mode": "normal",
-                    "group": "A"
-                  }
-                }
-              },
-              "overrides": []
-            },
-            "options": {
-              "legend": {
-                "displayMode": "list",
-                "placement": "bottom",
-                "showLegend": true
-              },
-              "tooltip": {
-                "mode": "multi",
-                "sort": "desc"
-              }
-            }
-          },
-          {
-            "id": 4,
-            "title": "Firewall drops - by source",
-            "type": "timeseries",
-            "datasource": {
-              "type": "loki",
-              "uid": "loki"
-            },
-            "gridPos": {
-              "x": 12,
-              "y": 21,
-              "w": 12,
-              "h": 8
-            },
-            "targets": [
-              {
-                "refId": "A",
-                "datasource": {
-                  "type": "loki",
-                  "uid": "loki"
-                },
-                "expr": "sum by (src) (count_over_time({app=\"kernel\"} |= \"FWD-filter-90-D\" | pattern \"<_>SRC=<src> DST=<dst> LEN=<_>\" [$__interval]))",
-                "queryType": "range",
-                "legendFormat": "{{src}}"
-              }
-            ],
-            "fieldConfig": {
-              "defaults": {
-                "custom": {
-                  "drawStyle": "bars",
-                  "fillOpacity": 70,
-                  "lineWidth": 0,
-                  "stacking": {
-                    "mode": "normal",
-                    "group": "A"
-                  }
-                }
-              },
-              "overrides": []
-            },
-            "options": {
-              "legend": {
-                "displayMode": "list",
-                "placement": "bottom",
-                "showLegend": true
-              },
-              "tooltip": {
-                "mode": "multi",
-                "sort": "desc"
-              }
-            }
+          "Preferences": {
+            "gfx.webrender.software": { "Value": true, "Status": "default" },
+            "gfx.x11-egl.force-disabled": { "Value": true, "Status": "default" }
           }
-        ]
+        }
       }
 
 runcmd:
-  # Wait until apt works through the proxy (see 00-lab-proxy above). Plain
-  # `apt-get update` exits 0 even when every mirror is unreachable, so
-  # Error-Mode=any is required or this loop breaks on the first attempt.
+  # --- Install the SSH key for ${admin_username} - FIRST, deliberately --------
+  # This is the same keypair Terraform put in every VM's admin_ssh_key, so from
+  # here "ssh lab@10.1.20.5" (or any f5demo.lan name) needs no password.
+  #
+  # It runs FIRST because it needs no packages: the key is already staged in
+  # /root by write_files, and the user exists by now (users_groups runs before
+  # runcmd). Left at the end - after apt-get upgrade and the ~10 min desktop
+  # install - it created a long window where the jumphost accepted SSH and
+  # looked ready, but had no key or ssh_config yet, so every hop to another lab
+  # VM fell back to a password prompt. Keep this block at the top.
+  - install -d -o ${admin_username} -g ${admin_username} -m 0700 /home/${admin_username}/.ssh
+  - install -o ${admin_username} -g ${admin_username} -m 0600 /root/lab-id-ed25519 /home/${admin_username}/.ssh/id_ed25519
+  - shred -u /root/lab-id-ed25519 2>/dev/null || rm -f /root/lab-id-ed25519
+  # Lab-only convenience: these VMs are rebuilt constantly, so their host keys
+  # change every deploy. Without this, every hop stops on a host-key prompt or
+  # a REMOTE HOST IDENTIFICATION HAS CHANGED error. Scoped to lab addresses and
+  # f5demo.lan only - delete this block to get normal host-key checking back.
   - |
-    for i in $(seq 1 60); do
-      if apt-get update -y -o APT::Update::Error-Mode=any; then
-        echo "apt-get update OK on attempt $i"
-        break
+    cat > /home/${admin_username}/.ssh/config <<'SSHCFG'
+    Host 10.1.* *.${dns_zone}
+        IdentityFile ~/.ssh/id_ed25519
+        StrictHostKeyChecking no
+        UserKnownHostsFile /dev/null
+        LogLevel ERROR
+    SSHCFG
+  - chown ${admin_username}:${admin_username} /home/${admin_username}/.ssh/config
+  - chmod 0600 /home/${admin_username}/.ssh/config
+
+  # Wait until apt works. apt now goes through the Tinyproxy on the services VM
+  # (see /etc/apt/apt.conf.d/00-lab-proxy above), so this loop transparently waits
+  # for BOTH the VyOS egress AND tinyproxy to be up (up to 60 x 20s = 20 min).
+  # NOTE: plain `apt-get update` exits 0 even when every mirror is unreachable
+  # (it only prints "W: Failed to fetch ..."), which would make this loop break
+  # on the first attempt. APT::Update::Error-Mode=any promotes those warnings
+  # to errors so the command actually exits non-zero and the loop retries.
+  # --- apt retry helpers -----------------------------------------------------
+  # Every download from this VM crosses the VyOS router, and the router REBOOTS
+  # ONCE about a minute after it bootstraps (see cloud-init-rtr.yaml.tpl) - which
+  # lands squarely in the middle of this VM's provisioning. Wrapping only
+  # `apt-get update` was not enough: on 2026-09-10 the update succeeded in the
+  # brief window before that reboot, then every package download failed with
+  # "Unable to connect" and NOTHING got installed - taking the proxy, DNS, the
+  # NGINX origin, the log stack and the desktop down with it, and leaving both
+  # XC CEs unable to register. So the installs retry too, not just the update.
+  #
+  # Both helpers retry for up to 20 minutes (60 x 20s).
+  # NOTE: plain `apt-get update` exits 0 even when every mirror is unreachable
+  # (it only prints "W: Failed to fetch"), so APT::Update::Error-Mode=any is
+  # required to make failure detectable at all.
+  - |
+    apt_update_retry() {
+      for i in $(seq 1 60); do
+        if apt-get update -y -o APT::Update::Error-Mode=any; then
+          echo "apt-get update OK on attempt $i"
+          return 0
+        fi
+        echo "apt-get update failed (attempt $i) - egress/proxy not up yet, retrying in 20s..."
+        sleep 20
+      done
+      echo "ERROR: apt-get update still failing after 60 attempts"
+      return 1
+    }
+    apt_retry() {
+      for i in $(seq 1 60); do
+        if DEBIAN_FRONTEND=noninteractive apt-get "$@"; then
+          echo "apt-get $* OK on attempt $i"
+          return 0
+        fi
+        echo "apt-get $* failed (attempt $i) - egress/proxy lost mid-run, refreshing index and retrying in 20s..."
+        apt-get update -y -o APT::Update::Error-Mode=any >/dev/null 2>&1 || true
+        sleep 20
+      done
+      echo "ERROR: apt-get $* still failing after 60 attempts"
+      return 1
+    }
+  - apt_update_retry
+  - apt_retry upgrade -y
+  # snapd does NOT read /etc/environment, so point it at the proxy explicitly.
+  # This MUST happen BEFORE the firefox install below. The firefox deb is a
+  # transitional package whose postinst pulls the snap, and the VyOS egress
+  # firewall now drops direct Internet access from this VM - so without the
+  # proxy set first, the snap fetch fails and the install dies.
+  # Verified working: tinyproxy logs CONNECT to api.snapcraft.io.
+  - snap set system proxy.http="http://${proxy_ip}:${proxy_port}" || true
+  - snap set system proxy.https="http://${proxy_ip}:${proxy_port}" || true
+  - systemctl restart snapd || true
+  # NOTE: no ntpdate. It has no installation candidate from Ubuntu 26.04 on,
+  # and apt-get install fails the WHOLE line if one package is missing - which
+  # silently left this VM with no xrdp, no XFCE and no Firefox. chrony already
+  # handles time here anyway (see the NTP client drop-in above); if a one-shot
+  # step is ever needed again, the replacement package is ntpsec-ntpdate.
+  # Split deliberately. apt-get install fails the WHOLE line if ANY package is
+  # missing - which is exactly how a dropped `ntpdate` once left this VM with no
+  # desktop and no RDP at all. The essentials go first and must succeed; the
+  # extras are installed one at a time, best-effort, so a package disappearing
+  # from a future Ubuntu release costs a text editor, not the jumphost.
+  - apt_retry install -y xfce4 xrdp
+  - |
+    for p in xfce4-goodies firefox mousepad thunar-archive-plugin gnome-keyring; do
+      # No candidate at all (the `ntpdate` case) - skip in seconds rather
+      # than burn 20 minutes of retries on a package that will never appear.
+      if ! apt-cache policy "$p" 2>/dev/null | grep -q 'Candidate: [^(]'; then
+        echo "WARNING: optional package '$p' has no installation candidate - skipping"
+        continue
       fi
-      echo "apt-get update failed (attempt $i), proxy not up yet, retrying in 20s..."
-      sleep 20
+      if apt_retry install -y "$p"; then
+        echo "installed optional package: $p"
+      else
+        echo "WARNING: optional package '$p' failed to install - continuing without it"
+      fi
     done
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gpg
-
-  # --- Grafana APT repo -------------------------------------------------------
-  # The key fetch needs the proxy passed explicitly: runcmd does not source
-  # /etc/environment, so curl would otherwise try to go direct and be dropped
-  # by the VyOS egress firewall.
-  - install -d -m 0755 /etc/apt/keyrings
+  # Defensive: the etc-firefox plug is auto-connected by Mozilla's snap
+  # declaration, but connect it explicitly in case that ever changes.
+  - snap connect firefox:etc-firefox || true
+  # Proxy for interactive shells (curl, wget, ...). Appended, never overwritten:
+  # /etc/environment already holds PATH and clobbering it breaks login sessions.
+  # 169.254.169.254 MUST bypass the proxy or the Azure IMDS / waagent breaks.
+  # ${vip_cidr} and .${dns_zone} matter too: the XC VIP and the internal zone
+  # are lab-internal, and Tinyproxy could not reach them anyway - its host
+  # resolves via Azure DNS, so .${dns_zone} names are NXDOMAIN there.
   - |
-    curl -fsSL -x "http://${proxy_ip}:${proxy_port}" https://apt.grafana.com/gpg.key \
-      | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
-  - |
-    echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
-      > /etc/apt/sources.list.d/grafana.list
-  - apt-get update -y -o APT::Update::Error-Mode=any
-  # Unpinned on purpose for a lab. To pin: loki=3.7.7 grafana=13.2.0 alloy=1.19.2-1
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y loki grafana alloy
-
-  # --- Loki -------------------------------------------------------------------
-  - install -o root -g root -m 0644 /root/loki-config.yml /etc/loki/config.yml
-  # Create the state dirs, THEN set ownership - never in one `install` call.
-  # The loki package creates the user with primary group 'nogroup'; there is no
-  # 'loki' group. `install -g loki` fails with "invalid group", the directories
-  # are never created, and Loki then crash-loops on
-  #   mkdir /var/lib/loki: permission denied
-  # which looks like a config fault but is not. `chown loki:` (trailing colon)
-  # uses the user's own primary group, whatever the package chose.
-  - install -d -m 0755 /var/lib/loki /var/lib/loki/chunks /var/lib/loki/rules /var/lib/loki/compactor
-  - chown -R loki: /var/lib/loki
-  # Loki ships a real config validator - use it before starting.
-  - loki -verify-config -config.file=/etc/loki/config.yml
-  - systemctl enable loki
-  - systemctl restart loki
-
-  # --- Alloy ------------------------------------------------------------------
-  - install -o root -g root -m 0644 /root/config.alloy /etc/alloy/config.alloy
-  # Expose the Alloy pipeline UI on the lab network (default is loopback only).
-  - echo 'CUSTOM_ARGS="--server.http.listen-addr=0.0.0.0:12345"' >> /etc/default/alloy
-  - systemctl daemon-reload
-  # `alloy validate` checks component wiring and arguments, not just syntax -
-  # the closest equivalent to named-checkconf. Verified against alloy 1.19.2.
-  - alloy validate /etc/alloy/config.alloy
-  - systemctl enable alloy
-  - systemctl restart alloy
-
-  # --- Grafana ----------------------------------------------------------------
-  # Grafana 13 UNBUNDLED the core datasources: the binary ships only
-  # alertmanager, cloudwatch, azuremonitor, testdata and graphite. Without the
-  # loki plugin, provisioning still registers the datasource in the DB (the API
-  # shows it, correctly marked default) but the UI silently omits it from the
-  # picker, logging only:
-  #   "Could not find plugin definition for data source" datasource_type=loki
-  #
-  # Grafana installs it itself via preinstall - see GF_PLUGINS_* below. All we
-  # need here is the directory it installs into.
-  - install -d -o grafana -g grafana -m 0755 /var/lib/grafana/plugins
-  - install -o root -g grafana -m 0640 /root/loki-datasource.yaml /etc/grafana/provisioning/datasources/loki.yaml
-  # No Internet from this VM: stop Grafana polling for updates/analytics.
-  # Grafana MUST have the proxy in its environment. Grafana 13 unbundled the
-  # core datasources and preinstalls them from grafana.com at startup; with no
-  # egress each attempt blocks ~10s and the HTTP server never comes up (we saw
-  # /api/health return 000 with 80+ restarts). With the proxy it pulls loki,
-  # prometheus, elasticsearch, tempo etc. itself in seconds.
-  # NO_PROXY must include 127.0.0.1 or Grafana's own calls to Loki would be
-  # sent to Tinyproxy.
-  #
-  # PREINSTALL_DISABLED suppresses Grafana's built-in default plugin set, which
-  # pulls 18 plugins / ~492 MB (prometheus, elasticsearch, influxdb, mssql,
-  # mysql, tempo, jaeger, zipkin ...) of which this lab uses exactly one.
-  # NOTE: `preinstall =` being empty in defaults.ini does NOT disable it - the
-  # default list is compiled into the binary and only this flag suppresses it.
-  # PREINSTALL_SYNC then installs just what we want, and does so BEFORE
-  # startup, which is what datasource provisioning needs - the supported
-  # alternative to shelling out to `grafana cli`.
-  # Result: 61 MB instead of 492 MB. Adding metrics later? Append the id here,
-  # e.g. GF_PLUGINS_PREINSTALL_SYNC=loki,grafana-lokiexplore-app,prometheus
-  - |
-    cat >> /etc/default/grafana-server <<'GFEOF'
-    GF_ANALYTICS_REPORTING_ENABLED=false
-    GF_ANALYTICS_CHECK_FOR_UPDATES=false
+    cat >> /etc/environment <<'ENVEOF'
     http_proxy="http://${proxy_ip}:${proxy_port}"
     https_proxy="http://${proxy_ip}:${proxy_port}"
     HTTP_PROXY="http://${proxy_ip}:${proxy_port}"
     HTTPS_PROXY="http://${proxy_ip}:${proxy_port}"
-    no_proxy="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},.internal.cloudapp.net,.lan"
-    NO_PROXY="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},.internal.cloudapp.net,.lan"
-    GF_PLUGINS_PREINSTALL_DISABLED=true
-    GF_PLUGINS_PREINSTALL_SYNC=loki,grafana-lokiexplore-app
-    GFEOF
-  - install -d -o grafana -g grafana -m 0755 /var/lib/grafana/dashboards
-  - install -o grafana -g grafana -m 0644 /root/lab-logs.json /var/lib/grafana/dashboards/lab-logs.json
-  - install -o root -g grafana -m 0640 /root/grafana-dashboards.yaml /etc/grafana/provisioning/dashboards/lab.yaml
-  - systemctl enable grafana-server
-  - systemctl restart grafana-server
-
-  # --- Assertions: none of these three ship a post-start self-check -----------
+    no_proxy="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},${vip_cidr},.${dns_zone},.internal.cloudapp.net,.lan"
+    NO_PROXY="localhost,127.0.0.1,::1,169.254.169.254,${vnet_cidr},${vip_cidr},.${dns_zone},.internal.cloudapp.net,.lan"
+    ENVEOF
+  # --- Point this VM at the lab NTP server ------------------------------------
+  # The Azure image syncs chrony to the host clock via "refclock PHC
+  # /dev/ptp_hyperv", which is stratum 0 and would always beat a stratum-1
+  # network server - so the lab NTP server would be configured but never
+  # actually selected. Comment the refclock out so this VM really uses it.
+  # To go back to Azure host time: un-comment that line and restart chrony.
+  # Comment out the Azure PTP refclock WHEREVER it lives. Up to Ubuntu 24.04 it
+  # was a line in /etc/chrony/chrony.conf; from 26.04 the Azure image ships it in
+  # /etc/chrony/conf.d/00-azure-ptp.conf instead. Targeting only chrony.conf made
+  # this a silent no-op: the refclock stayed active, and because it is stratum 0
+  # it always beat the lab NTP server, which was then polled but never selected
+  # (chronyc sources showed "#* PHC0" and "^- <lab server>").
   - |
-    sleep 8
-    for svc in loki alloy grafana-server; do
-      if systemctl is-active --quiet $svc; then
-        echo "OK: $svc is running"
-      else
-        echo "ERROR: $svc failed to start"
-        journalctl -u $svc -n 25 --no-pager
-      fi
-    done
-    if curl -s -u admin:admin 'http://127.0.0.1:3000/api/search?type=dash-db' 2>/dev/null | grep -q 'lab-logs'; then
-      echo "OK: the Lab Logs dashboard is provisioned"
-    else
-      echo "ERROR: dashboard not provisioned"
-      ls -l /var/lib/grafana/dashboards /etc/grafana/provisioning/dashboards 2>&1
-      journalctl -u grafana-server -n 15 --no-pager | grep -i provision
-    fi
-    if curl -s -u admin:admin http://127.0.0.1:3000/api/frontend/settings 2>/dev/null | grep -q '"type":"loki"'; then
-      echo "OK: the Loki datasource is visible to the Grafana frontend"
-    else
-      echo "ERROR: Loki registered but not in the frontend picker - the 'loki' plugin is probably missing"
-      ls /var/lib/grafana/plugins 2>&1
-      journalctl -u grafana-server -n 15 --no-pager | grep -i plugin
-    fi
-    if curl -s -o /dev/null -w '%%{http_code}' http://127.0.0.1:3100/ready | grep -q 200; then
-      echo "OK: loki /ready returned 200"
-    else
-      echo "ERROR: loki is not ready - check /var/lib/loki exists and is owned by the loki user"
-      ls -ld /var/lib/loki 2>&1
-      journalctl -u loki -n 15 --no-pager
-    fi
-    if ss -ulnp 2>/dev/null | grep -q ':514'; then
-      echo "OK: syslog listener bound on udp/514"
-    else
-      echo "ERROR: nothing listening on udp/514 - check the CAP_NET_BIND_SERVICE drop-in"
-      ss -ulnp 2>/dev/null | head
-    fi
-
-  # --- NTP + DNS last (same ordering rule as the other VMs) -------------------
-  - sed -i 's|^refclock PHC|#refclock PHC|' /etc/chrony/chrony.conf
+    grep -rl '^refclock PHC' /etc/chrony/chrony.conf /etc/chrony/conf.d/ 2>/dev/null \
+      | xargs -r sed -i 's|^refclock PHC|#refclock PHC|' || true
   - systemctl restart chrony
+  # --- Switch DNS to the lab resolver (LAST: see the staging note above) -------
   - install -o root -g root -m 0600 /root/99-lab-dns.yaml /etc/netplan/99-lab-dns.yaml
+  # netplan generate validates without applying - the closest thing to a
+  # named-checkconf for netplan. Bad YAML fails here instead of cutting the link.
   - netplan generate
   - netplan apply
+  - |
+    sleep 3
+    echo "resolver now: $(resolvectl status 2>/dev/null | grep -m1 'Current DNS Server')"
+    echo "ntp source:   $(chronyc -n sources 2>/dev/null | tail -1)"
+  # Configure XFCE as default session for XRDP
+  - echo "xfce4-session" > /home/${admin_username}/.xsession
+  - chown ${admin_username}:${admin_username} /home/${admin_username}/.xsession
+  # Pre-seed xfwm4 with compositing disabled (see the note on /root/xfwm4.xml).
+  # Done before the first login so the very first RDP session is already safe -
+  # otherwise the user hits the black screen once before it can be turned off.
+  - install -d -o ${admin_username} -g ${admin_username} -m 0755 /home/${admin_username}/.config/xfce4/xfconf/xfce-perchannel-xml
+  - install -o ${admin_username} -g ${admin_username} -m 0644 /root/xfwm4.xml /home/${admin_username}/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
+  # Add xrdp to group ssl-cert (certificates access)
+  - usermod -aG ssl-cert xrdp
+  # Enable xrdp when vm start then reboot to apply updates
+  - systemctl enable xrdp
+  - reboot

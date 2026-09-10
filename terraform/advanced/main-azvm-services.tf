@@ -91,15 +91,19 @@ locals {
   internal_lb_fqdn = try(one([for f in var.f5xc_lb_nginx_fqdn : f if endswith(f, ".${var.dns_internal_zone}")]), null)
 
   dns_zone_records = merge({
-    "${var.prefix}-vm-jmp"               = var.azure_nic_jmp_ip_addr
-    "${var.prefix}-vm-svc"               = var.azure_nic_svc_ip_addr
-    "${var.prefix}-vm-obs"               = var.azure_nic_obs_ip_addr
-    "${var.prefix}-vm-app"               = var.azure_nic_app_ip_addr
-    "${var.prefix}-vm-rtr-ext"           = var.azure_nic_rtr_ext_ip_addr
-    "${var.prefix}-vm-rtr-dmz"           = var.azure_nic_rtr_dmz_ip_addr
-    "${var.prefix}-${var.azure_vm_ce01}" = var.azure_nic_xc_ce01_slo_ip_addr
-    "${var.prefix}-${var.azure_vm_ce02}" = var.azure_nic_xc_ce02_slo_ip_addr
-    "${var.prefix}-lbce"                 = var.azure_lbce_ip
+    "jumphost"      = var.azure_nic_jmp_ip_addr
+    "services"      = var.azure_nic_svc_ip_addr
+    "dns"           = var.azure_nic_svc_ip_addr
+    "ntp"           = var.azure_nic_svc_ip_addr
+    "proxy"         = var.azure_nic_svc_ip_addr
+    "observability" = var.azure_nic_obs_ip_addr
+    "app"           = var.azure_nic_app_ip_addr
+    "router-ext"    = var.azure_nic_rtr_ext_ip_addr
+    "router-dmz"    = var.azure_nic_rtr_dmz_ip_addr
+    "ce01"          = var.azure_nic_xc_ce01_slo_ip_addr
+    "ce02"          = var.azure_nic_xc_ce02_slo_ip_addr
+    "lbce"          = var.azure_lbce_ip
+    "mylab"         = var.f5xc_lb_nginx_vip
     },
     # A record for the XC HTTP LB's internal name, pointing at the VIP.
     # The zone file needs the name RELATIVE to the zone: an entry of

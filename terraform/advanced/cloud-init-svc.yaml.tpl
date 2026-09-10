@@ -178,16 +178,48 @@ runcmd:
   # (it only prints "W: Failed to fetch ..."), which would make this loop break
   # on the first attempt. APT::Update::Error-Mode=any promotes those warnings
   # to errors so the command actually exits non-zero and the loop retries.
+  # --- apt retry helpers -----------------------------------------------------
+  # Every download from this VM crosses the VyOS router, and the router REBOOTS
+  # ONCE about a minute after it bootstraps (see cloud-init-rtr.yaml.tpl) - which
+  # lands squarely in the middle of this VM's provisioning. Wrapping only
+  # `apt-get update` was not enough: on 2026-09-10 the update succeeded in the
+  # brief window before that reboot, then every package download failed with
+  # "Unable to connect" and NOTHING got installed - taking the proxy, DNS, the
+  # NGINX origin, the log stack and the desktop down with it, and leaving both
+  # XC CEs unable to register. So the installs retry too, not just the update.
+  #
+  # Both helpers retry for up to 20 minutes (60 x 20s).
+  # NOTE: plain `apt-get update` exits 0 even when every mirror is unreachable
+  # (it only prints "W: Failed to fetch"), so APT::Update::Error-Mode=any is
+  # required to make failure detectable at all.
   - |
-    for i in $(seq 1 60); do
-      if apt-get update -y -o APT::Update::Error-Mode=any; then
-        echo "apt-get update OK on attempt $i"
-        break
-      fi
-      echo "apt-get update failed (attempt $i), egress via VyOS not up yet, retrying in 20s..."
-      sleep 20
-    done
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y tinyproxy
+    apt_update_retry() {
+      for i in $(seq 1 60); do
+        if apt-get update -y -o APT::Update::Error-Mode=any; then
+          echo "apt-get update OK on attempt $i"
+          return 0
+        fi
+        echo "apt-get update failed (attempt $i) - egress/proxy not up yet, retrying in 20s..."
+        sleep 20
+      done
+      echo "ERROR: apt-get update still failing after 60 attempts"
+      return 1
+    }
+    apt_retry() {
+      for i in $(seq 1 60); do
+        if DEBIAN_FRONTEND=noninteractive apt-get "$@"; then
+          echo "apt-get $* OK on attempt $i"
+          return 0
+        fi
+        echo "apt-get $* failed (attempt $i) - egress/proxy lost mid-run, refreshing index and retrying in 20s..."
+        apt-get update -y -o APT::Update::Error-Mode=any >/dev/null 2>&1 || true
+        sleep 20
+      done
+      echo "ERROR: apt-get $* still failing after 60 attempts"
+      return 1
+    }
+  - apt_update_retry
+  - apt_retry install -y tinyproxy
   - cp /root/tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
   - systemctl enable tinyproxy
   - systemctl restart tinyproxy
@@ -208,7 +240,7 @@ runcmd:
   - systemctl restart chrony
 
   # --- DNS (bind9) ------------------------------------------------------------
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y bind9 bind9-utils bind9-dnsutils
+  - apt_retry install -y bind9 bind9-utils bind9-dnsutils
   - install -o root -g bind -m 0644 /root/named.conf.options /etc/bind/named.conf.options
   - install -o root -g bind -m 0644 /root/named.conf.local   /etc/bind/named.conf.local
   - install -o root -g bind -m 0644 /root/db.${dns_zone}     /etc/bind/db.${dns_zone}

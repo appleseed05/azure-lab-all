@@ -81,16 +81,48 @@ runcmd:
   # Wait until apt works. apt now goes through the Tinyproxy on the services VM
   # (see /etc/apt/apt.conf.d/00-lab-proxy above), so this loop transparently
   # waits for BOTH the VyOS egress AND tinyproxy to be up.
+  # --- apt retry helpers -----------------------------------------------------
+  # Every download from this VM crosses the VyOS router, and the router REBOOTS
+  # ONCE about a minute after it bootstraps (see cloud-init-rtr.yaml.tpl) - which
+  # lands squarely in the middle of this VM's provisioning. Wrapping only
+  # `apt-get update` was not enough: on 2026-09-10 the update succeeded in the
+  # brief window before that reboot, then every package download failed with
+  # "Unable to connect" and NOTHING got installed - taking the proxy, DNS, the
+  # NGINX origin, the log stack and the desktop down with it, and leaving both
+  # XC CEs unable to register. So the installs retry too, not just the update.
+  #
+  # Both helpers retry for up to 20 minutes (60 x 20s).
+  # NOTE: plain `apt-get update` exits 0 even when every mirror is unreachable
+  # (it only prints "W: Failed to fetch"), so APT::Update::Error-Mode=any is
+  # required to make failure detectable at all.
   - |
-    for i in $(seq 1 60); do
-      if apt-get update -y -o APT::Update::Error-Mode=any; then
-        echo "apt-get update OK on attempt $i"
-        break
-      fi
-      echo "apt-get update failed (attempt $i), retrying in 20s..."
-      sleep 20
-    done
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y nginx
+    apt_update_retry() {
+      for i in $(seq 1 60); do
+        if apt-get update -y -o APT::Update::Error-Mode=any; then
+          echo "apt-get update OK on attempt $i"
+          return 0
+        fi
+        echo "apt-get update failed (attempt $i) - egress/proxy not up yet, retrying in 20s..."
+        sleep 20
+      done
+      echo "ERROR: apt-get update still failing after 60 attempts"
+      return 1
+    }
+    apt_retry() {
+      for i in $(seq 1 60); do
+        if DEBIAN_FRONTEND=noninteractive apt-get "$@"; then
+          echo "apt-get $* OK on attempt $i"
+          return 0
+        fi
+        echo "apt-get $* failed (attempt $i) - egress/proxy lost mid-run, refreshing index and retrying in 20s..."
+        apt-get update -y -o APT::Update::Error-Mode=any >/dev/null 2>&1 || true
+        sleep 20
+      done
+      echo "ERROR: apt-get $* still failing after 60 attempts"
+      return 1
+    }
+  - apt_update_retry
+  - apt_retry install -y nginx
   - cp /root/nginx-default-site.conf /etc/nginx/sites-available/default
   - ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
   # nginx is already running (started by the package postinst) with the stock
@@ -119,7 +151,15 @@ runcmd:
   # network server - so the lab NTP server would be configured but never
   # actually selected. Comment the refclock out so this VM really uses it.
   # To go back to Azure host time: un-comment that line and restart chrony.
-  - sed -i 's|^refclock PHC|#refclock PHC|' /etc/chrony/chrony.conf
+  # Comment out the Azure PTP refclock WHEREVER it lives. Up to Ubuntu 24.04 it
+  # was a line in /etc/chrony/chrony.conf; from 26.04 the Azure image ships it in
+  # /etc/chrony/conf.d/00-azure-ptp.conf instead. Targeting only chrony.conf made
+  # this a silent no-op: the refclock stayed active, and because it is stratum 0
+  # it always beat the lab NTP server, which was then polled but never selected
+  # (chronyc sources showed "#* PHC0" and "^- <lab server>").
+  - |
+    grep -rl '^refclock PHC' /etc/chrony/chrony.conf /etc/chrony/conf.d/ 2>/dev/null \
+      | xargs -r sed -i 's|^refclock PHC|#refclock PHC|' || true
   - systemctl restart chrony
   # --- Switch DNS to the lab resolver (LAST: see the staging note above) -------
   - install -o root -g root -m 0600 /root/99-lab-dns.yaml /etc/netplan/99-lab-dns.yaml

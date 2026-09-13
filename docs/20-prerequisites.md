@@ -123,7 +123,6 @@ failures in this lab come from skipping one of these steps.
    | `azure_client_secret` | Service Principal client secret |
    | `azure_adminpassword` | Admin password for all Azure VMs — recommended to set via environment variable rather than hardcoding in the file |
    | `allowed_pips` | List of your public IP(s), e.g. `["203.0.113.10/32"]` |
-   | `azure_tag_owner` / `azure_tag_env` | Azure tags applied to the resources |
    | `f5xc_api_p12_file` | Filename of the P12 certificate (see above) |
    | `f5xc_tenant_name` | Your F5XC tenant short name |
    | `f5xc_namespace_name` | Your existing F5XC namespace |

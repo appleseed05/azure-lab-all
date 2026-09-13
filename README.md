@@ -45,8 +45,9 @@ The key and value of this label is configured through Terraform variables. Pleas
 # How to deploy  
 1/ Git clone the repo on a machine meeting the requirements.  
 2/ Go in the terraform folder of the project.  
-  - Basic folder deploy Ubuntu VM with no configuration
+  - Basic folder deploy Ubuntu VM with no configuration  
   - Advanced folder deploy Ubuntu VM with various configuration (like proxy or NGINX server)
+
 3/ Rename **terraform.tfvars.example** into **terraform.tfvars**.  
 4/ Edit **terraform.tfvars** to define relevant value of all variables*. See bellow for variable that needs to be edited.  
 5/ Execute Terraform deployment with command:  

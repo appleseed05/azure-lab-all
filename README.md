@@ -44,7 +44,7 @@ The key and value of this label is configured through Terraform variables. Pleas
 
 # How to deploy  
 1/ Git clone the repo on a machine meeting the requirements.  
-2/ Go in the terraform folder of the project.  
+2/ Go in the terraform folder of the project an chose scenario:  
   - Basic folder deploy Ubuntu VM with no configuration  
   - Advanced folder deploy Ubuntu VM with various configuration (like proxy or NGINX server)
 

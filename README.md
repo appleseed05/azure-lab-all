@@ -64,6 +64,7 @@ Here are the variables that needs to be edited in terraform.tfvars:
 * azure_client_secret
 * azure_adminpassword
 * allowed_pips
+* f5xc_tenant_name
 * f5xc_api_p12_file
 * f5xc_namespace_name
 

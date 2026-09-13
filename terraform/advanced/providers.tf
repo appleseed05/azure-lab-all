@@ -39,5 +39,5 @@ provider "volterra" {
   # Resolved against the module directory, not the shell working directory,
   # so the p12 must sit in the project folder alongside the .tf files.
   api_p12_file = "${path.module}/${var.f5xc_api_p12_file}"
-  url          = var.f5xc_api_url
+  url          = "https://${var.f5xc_tenant_name}.console.ves.volterra.io/api"
 }

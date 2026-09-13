@@ -93,13 +93,6 @@ failures in this lab come from skipping one of these steps.
   5. **Do not commit this file** — it's already excluded via `.gitignore`
      (`*.p12`), but double-check before pushing to a public repo.
 - **`f5xc_tenant_name`** — your tenant's short name.
-- **Known Label** — the Virtual Site grouping the two CE sites uses a Known Label
-  that **Terraform creates for you** in the `shared` namespace:
-  `<prefix>-vsite-label-key` = `<prefix>-vsite-label-value`. There are no
-  `f5xc_label_key` / `f5xc_label_value` variables any more; both are derived from
-  `prefix`. Make sure a key of that name does not already exist in your tenant,
-  or `volterra_known_label_key` will conflict with it — changing `prefix` is the
-  simplest fix.
 - **Naming constraint (important)**: `prefix` and `f5xc_namespace_name` — and by
   extension every Azure/XC object name derived from `prefix` — **must only use
   lower-case alphanumeric characters and dashes, and must start with an

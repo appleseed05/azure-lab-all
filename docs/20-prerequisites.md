@@ -92,7 +92,6 @@ failures in this lab come from skipping one of these steps.
      (On Windows: `$env:VES_P12_PASSWORD = "your-p12-password"` in PowerShell.)
   5. **Do not commit this file** — it's already excluded via `.gitignore`
      (`*.p12`), but double-check before pushing to a public repo.
-- **`f5xc_api_url`** — set to `https://<your-tenant-name>.console.ves.volterra.io/api`.
 - **`f5xc_tenant_name`** — your tenant's short name.
 - **Known Label** — the Virtual Site grouping the two CE sites uses a Known Label
   that **Terraform creates for you** in the `shared` namespace:

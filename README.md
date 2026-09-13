@@ -11,12 +11,7 @@ It includes the following :
 - F5 XC Virtual Site grouping the CE site  
 
 # 📖 Documentation
-For detailed architecture diagrams, prerequisites checklist, and troubleshooting
-commands, see the [`docs/`](./docs/README.md) folder:
-- [Architecture](./docs/10-architecture.md)
-- [Prerequisites](./docs/20-prerequisites.md)
-- [Troubleshooting](./docs/30-troubleshooting.md)
-
+For detailed inforamtion like architecture diagrams or prerequisites checklist, see the [`docs/`](./docs/README.md) folder.  
 
 # Requirement:
 The project in this repo needs to be run on a machine with following software installed:  
@@ -71,8 +66,7 @@ Here are the variables that needs to be edited in terraform.tfvars:
 * allowed_pips
 * f5xc_api_p12_file
 * f5xc_namespace_name
-* f5xc_label_key
-* f5xc_label_value
+
 
 The prefix variable is used to prefix all the object name created.
 

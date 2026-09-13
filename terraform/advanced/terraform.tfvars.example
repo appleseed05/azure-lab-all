@@ -18,8 +18,6 @@ allowed_pips = ["1.2.3.4", "5.6.7.8"]
 f5xc_api_p12_file = "<p12-file-name>" # the file must be located in the same folder as the Terraform files
 f5xc_tenant_name = "<tenant-name>"
 f5xc_namespace_name = "<namespace-name>"
-f5xc_api_url = "https://<tenant-name>.console.ves.volterra.io/api"
-
 
 
 # ---------------------------------------------------------------
@@ -160,11 +158,10 @@ loki_retention_period ="168h"
 # XC
 # ---------------------------------------------------------------
 # f5xc_api_p12_file = "<p12-file-path>"
-# f5xc_api_url = "https://<tenant-name>.console.ves.volterra.io/api"
 # f5xc_namespace_name = "<namespace-name>"
 
 f5xc_bgp_asn           = "65100"
 f5xc_vip_cidr          = "192.168.200.0/24"
 
-f5xc_lb_nginx_fqdn        = ["mylab.mypublicdomain.com", "mylab.myinternaldomain.local"]    # for the internal domain, use the same as dns_internal_zone variable
+f5xc_lb_nginx_fqdn        = ["mylab.mypublicdomain.com", "mylab.f5demo.lan"]    # for the external domain, you must have a public DSN resolution
 f5xc_lb_nginx_vip         = "192.168.200.5"

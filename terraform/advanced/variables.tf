@@ -345,11 +345,6 @@ variable "f5xc_api_p12_file" {
   description = "F5XC tenant api key"
 }
 
-variable "f5xc_api_url" {
-  type        = string
-  description = "F5XC tenant url"
-}
-
 variable "f5xc_namespace_name" {
   type        = string
   description = "F5XC Namespace name"

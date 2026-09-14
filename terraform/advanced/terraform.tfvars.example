@@ -122,7 +122,7 @@ image_sku_xcce = "f5xccebyol"
 image_version_xcce  = "9.2025.17"
 
 image_publisher_ubuntu = "Canonical"
-image_offer_ubuntu = "ubuntu-24_04-lts"
+image_offer_ubuntu = "ubuntu-26_04-lts"
 image_sku_ubuntu = "server"
 image_version_ubuntu  = "latest"
 

@@ -293,6 +293,20 @@ runcmd:
   # otherwise the user hits the black screen once before it can be turned off.
   - install -d -o ${admin_username} -g ${admin_username} -m 0755 /home/${admin_username}/.config/xfce4/xfconf/xfce-perchannel-xml
   - install -o ${admin_username} -g ${admin_username} -m 0644 /root/xfwm4.xml /home/${admin_username}/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
+  # REQUIRED, do not drop. /usr/bin/install on Ubuntu 26.04 is rust-coreutils,
+  # not GNU coreutils, and its `install -d a/b/c` applies -o/-g to the LAST
+  # component ONLY - the parents it creates along the way stay root:root. So the
+  # line above left /home/${admin_username}/.config, .../xfce4 and .../xfconf
+  # owned by root, and ${admin_username} could not write into its own ~/.config.
+  #
+  # That is a black screen with no mouse pointer, NOT a compositing problem:
+  # xrdp authenticates, Xorg and xfwm4 come up fine, but xfdesktop dies at
+  # startup ("g_file_new_for_path: assertion 'path != NULL' failed" - it cannot
+  # resolve a save location) so nothing ever paints the root window or sets its
+  # cursor, and xfce4-panel hits the same failure and is respawned by
+  # xfce4-session every ~2s forever. dconf and xfwm4 also fail to create their
+  # own config dirs. Symptoms are in ~/.xsession-errors.
+  - chown -R ${admin_username}:${admin_username} /home/${admin_username}/.config
   # Add xrdp to group ssl-cert (certificates access)
   - usermod -aG ssl-cert xrdp
   # Enable xrdp when vm start then reboot to apply updates
